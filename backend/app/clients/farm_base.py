@@ -133,6 +133,14 @@ class FarmBackend:
     def snapshot(self, printer: str) -> bytes | None:
         self._no("snapshot")
 
+    def camera_sources(self, printer: str) -> list[str]:
+        """The printer's live camera streams, a chamber camera first. A farm without named cameras has none."""
+        return []
+
+    def frame(self, source: str, timeout: float = 15) -> bytes | None:
+        """One JPEG from one of camera_sources()."""
+        return None
+
     def filament_assignments(self):
         self._no("filament")
 

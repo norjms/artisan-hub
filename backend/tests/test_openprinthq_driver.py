@@ -39,6 +39,9 @@ class FakeOPHQ:
         # False = an engine from before out of service / maintenance log / priority (the probe gets a 422).
         self.parity = False
         self.down = []
+        # None = an OpenPrintHQ from before named cameras (GET /api/cameras answers 404).
+        self.cameras = None
+        self.frames = set()
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         p, m = request.url.path, request.method
@@ -71,6 +74,14 @@ class FakeOPHQ:
             return httpx.Response(200, json={"success": True})
         if p == API + "/printers/1/camera/snapshot":
             return httpx.Response(200, content=b"\xff\xd8jpeg")
+        if p == "/api/cameras":
+            if self.cameras is None:
+                return httpx.Response(404, json={"error": "Not Found"})
+            return httpx.Response(200, json={"streams": self.cameras})
+        if p == "/api/cameras/frame.jpeg":
+            src = request.url.params.get("src")
+            return (httpx.Response(200, content=b"\xff\xd8" + src.encode()) if src in self.frames
+                    else httpx.Response(502, json={"error": "the camera did not return a frame"}))
         if p == API + "/queue/" and m == "GET":
             return httpx.Response(200, json=self.queue)
         if p == API + "/queue/" and m == "POST":
@@ -408,3 +419,36 @@ def test_submit_job_pinned_to_a_printer(ophq):
     c.submit_job(file_ref="5", job_name="Box", printer="voron")      # case differs from the farm's "Voron"
     post = [b for (m, p, b, _q) in fake.calls if m == "POST" and p == API + "/queue/"][-1]
     assert post["printer_id"] == 2 and "target_model" not in post and "target_group_id" not in post
+
+
+def test_cameras_are_read_like_watchtowers_a_chamber_camera_first(ophq):
+    c, fake = ophq
+    fake.cameras = [
+        {"printer_id": 1, "printer_name": "X1C", "kind": "builtin", "camera_name": "Printer camera",
+         "stream_name": "p1", "enabled": True, "state": "ONLINE"},
+        {"printer_id": 1, "printer_name": "X1C", "kind": "extra", "camera_name": "Chamber", "stream_name": "p1_c4",
+         "enabled": True, "state": "UNKNOWN"},
+        {"printer_id": 1, "printer_name": "X1C", "kind": "extra", "camera_name": "Top", "stream_name": "p1_c5",
+         "enabled": True, "state": "OFFLINE"},
+        {"printer_id": 1, "printer_name": "X1C", "kind": "engine", "camera_name": "External", "stream_name": "p1_ext",
+         "enabled": False, "state": "DISABLED"},
+        {"printer_id": 2, "printer_name": "Voron", "kind": "builtin", "camera_name": "Printer camera",
+         "stream_name": "p2", "enabled": True, "state": "ONLINE"},
+    ]
+    assert c.camera_sources("X1C") == ["p1_c4", "p1"]
+    assert c.camera_sources("voron") == ["p2"]
+    fake.frames = {"p1_c4", "p1"}
+    assert c.frame("p1_c4") == b"\xff\xd8p1_c4"
+    assert c.snapshot("X1C") == b"\xff\xd8p1_c4", "the chamber camera first"
+    fake.frames = {"p1"}
+    assert c.snapshot("X1C") == b"\xff\xd8p1", "then the next camera"
+    fake.frames = set()
+    assert c.frame("p1") is None
+    assert c.snapshot("X1C") == b"\xff\xd8jpeg", "and the engine's own snapshot when no stream answers"
+
+
+def test_an_openprinthq_without_named_cameras_keeps_the_engine_snapshot(ophq):
+    c, fake = ophq
+    assert fake.cameras is None
+    assert c.camera_sources("X1C") == []
+    assert c.snapshot("X1C") == b"\xff\xd8jpeg"

@@ -226,7 +226,7 @@ STREAM_SECONDS = 600       # one live view at most; the app reopens it
 @router.get("/printers/{name}/stream")
 def printer_stream(name: str, p: Principal = Depends(need("view"))):
     """The printer's camera, live as a stream of JPEG frames (multipart MJPEG, about 2 to 3 a second: as fast as
-    Legacy farm hands out frames). Ends after 10 minutes. Works anywhere the hub does (no direct camera access)."""
+    the farm hands out frames). Ends after 10 minutes. Works anywhere the hub does (no direct camera access)."""
     import time
     from fastapi.responses import StreamingResponse
     try:

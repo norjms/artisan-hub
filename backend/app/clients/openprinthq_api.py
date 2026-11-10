@@ -275,7 +275,39 @@ class OpenPrintHQClient(BaseClient, FarmBackend):
             return {"ok": True, "targets": targets}
         raise FarmUnsupported(self.kind, "commands")
 
+    def _cameras(self) -> list:
+        """Every printer's named cameras, chamber cameras first (OpenPrintHQ's GET /api/cameras), or [] from an
+        OpenPrintHQ without them."""
+        try:
+            return (self.request("GET", "/api/cameras", retries=1) or {}).get("streams") or []
+        except ApiError:
+            return []
+
+    def camera_sources(self, printer: str) -> list[str]:
+        """The printer's live camera streams, a chamber camera first: the same shape as Legacy farm's, so the hub
+        reads cameras from either farm the same way. Cameras switched off or known to be offline are left out."""
+        p = self._by_name(printer)
+        mine = [c for c in self._cameras() if c.get("printer_id") == p.get("id") and c.get("enabled", True)
+                and str(c.get("state", "")).upper() not in ("OFFLINE", "DISABLED") and c.get("stream_name")]
+        mine.sort(key=lambda c: 0 if "chamber" in str(c.get("camera_name", "")).lower() else 1)
+        return [c["stream_name"] for c in mine]
+
+    def frame(self, source: str, timeout: float = 15) -> bytes | None:
+        """One JPEG from one of the farm's camera streams, through OpenPrintHQ (never from the printer directly)."""
+        try:
+            r = self.request("GET", "/api/cameras/frame.jpeg", params={"src": source}, retries=1, expect_json=False,
+                             timeout=timeout)
+        except ApiError:
+            return None
+        return r.content if r.content[:2] == b"\xff\xd8" else None
+
     def snapshot(self, printer: str) -> bytes | None:
+        """One camera frame for a printer, preferring a chamber camera; the engine's own snapshot when OpenPrintHQ
+        has no named cameras for it, or none of them answered."""
+        for src in self.camera_sources(printer)[:2]:
+            data = self.frame(src, timeout=20)
+            if data:
+                return data
         p = self._by_name(printer)
         try:
             r = self.request("GET", f"{API}/printers/{int(p['id'])}/camera/snapshot", retries=1, expect_json=False)

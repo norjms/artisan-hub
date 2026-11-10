@@ -68,4 +68,5 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Record the digest
-        run: echo "Image: ${IMAGE}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Image: ${IMAGE}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

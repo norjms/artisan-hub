@@ -1,0 +1,107 @@
+"""Runtime configuration. Every setting comes from an environment variable named HUB_<NAME>, for example
+HUB_PUBLIC_URL. See docs/configuration.md for the full list. Defaults are neutral: a setting left empty turns its
+feature off.
+"""
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="HUB_", extra="ignore")
+
+    # Core
+    public_url: str = "http://localhost:8080"
+    worker_threads: int = 3
+    database_url: str = "postgresql+psycopg://hub:hub@db:5432/hub"
+    session_secret: str = "change-me"
+    data_dir: str = "/data"
+    library_root: str = "/srv/library"          # Manyfold library, shared bind mount
+    source_root: str = ""                       # server folder admins may assign to teams; empty = none
+    inbox_dir: str = ""                         # first team inbox folder, under source_root; empty = none
+    deltaprints_dir: str = ""                   # first team DeltaPrints folder, under source_root; empty = none
+    dev_auth_bypass: bool = False                # tests only
+    setup_token: str = ""                        # first-run setup token (HUB_SETUP_TOKEN); generated and logged if empty
+
+    # Filament identification (mobile control, 2026-10-23). Team settings vision_url / vision_model override these.
+    vision_url: str = ""                         # Ollama with a multimodal model; empty = none
+    vision_model: str = "gemma4:e4b"
+    vision_timeout: float = 90.0
+    upc_lookup_url: str = "https://api.upcitemdb.com/prod/trial/lookup"   # free trial API, no key, about 100 a day
+
+    # People auth (OpenID Connect, for example Authentik)
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_ca_pem: str = ""                       # PEM of a private authority to trust for the OIDC provider, besides the system's
+    admin_group: str = "hub-admins"           # platform admins (manage all teams, server folders)
+    user_groups: str = "hub-users"               # comma list of OIDC groups allowed to sign in (plus admin_group)
+    connection_key: str = ""                     # key for connected-service secrets; derived from session_secret if empty
+    first_team_name: str = "My workshop"         # name of the first team on a new installation
+    authentik_url: str = ""                      # Authentik API for invites (a service account token)
+    authentik_token: str = ""
+    authentik_group: str = "hub-users"
+    authentik_invite_flow: str = "artisan-hub-invite"
+
+    # WooCommerce
+    woo_url: str = ""
+    woo_key: str = ""
+    woo_secret: str = ""
+    woo_webhook_secret: str = ""
+    woo_verify_tls: bool = True
+
+    # ResourceSpace DAM
+    rs_url: str = ""
+    rs_host: str = ""
+    rs_user: str = ""
+    rs_key: str = ""
+
+    # Manyfold
+    manyfold_url: str = ""
+    manyfold_public_url: str = ""
+    manyfold_client_id: str = ""
+    manyfold_client_secret: str = ""
+    manyfold_library_path: str = ""   # path as Manyfold sees it
+
+    # Legacy farm
+    wt_url: str = ""
+    wt_public_url: str = ""
+    wt_api_key: str = ""
+    wt_username: str = ""
+    wt_password: str = ""
+
+    # InvenTree
+    inventree_url: str = ""
+    inventree_host: str = ""
+    inventree_public_url: str = ""
+    inventree_token: str = ""
+
+    # Spoolman
+    spoolman_url: str = ""
+    slicer_url: str = ""                 # slicer service, for example http://slicer:8090; empty = slicing off
+    slicer_token: str = ""
+    spoolman_public_url: str = ""
+
+    # Alerts
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "ArtisanHub <hub@localhost>"
+    alert_to: str = ""
+    # Shared look for the supporting apps: a reverse proxy sends this key with the signed-in person's email (empty = off)
+    theme_proxy_key: str = ""
+    wordmark: str = "/theme/artisanhub-wordmark.svg"   # path or URL of the wordmark the phone apps draw
+
+    # Phone app: Connect a phone links (/pair), the install page (/get-app), Android App Links and iOS Universal Links
+    app_id: str = ""                               # Android package and iOS bundle id; empty = no app links
+    android_cert_sha256: str = ""                  # SHA-256 of the app's signing key, comma list; empty = no App Links
+    android_apk_dir: str = ""                    # folder holding artisan-hub-<version>.apk files; empty = none
+    android_store_url: str = ""                    # Play listing; when set it replaces the APK download
+    ios_team_id: str = ""                          # Apple Developer team id; turns on Universal Links (paid program only)
+    ios_store_url: str = ""                        # TestFlight or App Store link; when set the install page offers it
+    ios_app_store_id: str = ""                     # numeric App Store id, for Safari's Smart App Banner
+
+
+@lru_cache
+def settings() -> Settings:
+    return Settings()

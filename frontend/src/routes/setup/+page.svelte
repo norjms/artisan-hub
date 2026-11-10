@@ -1,0 +1,105 @@
+<script>
+  // First-run setup: the hub's own front end over /api/setup/v1, so the hub is complete without the
+  // installer (invariants 3 and 4). The installer drives the same API from outside.
+  import { onMount } from 'svelte';
+
+  let status = $state(null);
+  let err = $state('');
+  let busy = $state(false);
+  let farm = $state('');
+  let teamName = $state('');
+  let token = $state('');
+  let done = $state(null);
+  let copied = $state(false);
+
+  onMount(async () => {
+    try {
+      const r = await fetch('/api/setup/v1/status');
+      status = await r.json();
+    } catch (e) {
+      err = 'The hub did not answer. Reload the page in a moment.';
+    }
+  });
+
+  async function submit(e) {
+    e.preventDefault();
+    err = '';
+    busy = true;
+    try {
+      const r = await fetch('/api/setup/v1/initialize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.trim()}` },
+        body: JSON.stringify({ farm, team_name: teamName.trim(), key_name: 'First-run setup' })
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        err = typeof body.detail === 'string' ? body.detail : `Setup failed (${r.status})`;
+        return;
+      }
+      done = body;
+    } catch (e) {
+      err = 'The hub did not answer. Try again.';
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function copyKey() {
+    await navigator.clipboard.writeText(done.api_key);
+    copied = true;
+  }
+</script>
+
+<svelte:head><title>Set up ArtisanHub</title></svelte:head>
+
+<div class="min-h-[70vh] grid place-items-center">
+  <div class="panel p-6 w-full max-w-lg">
+    <div class="flex items-center gap-2 font-bold text-lg mb-4"><img src="/favicon.svg" alt="" class="w-7 h-7" /> ArtisanHub</div>
+
+    {#if done}
+      <h1 class="text-xl font-semibold mb-2">Setup is done</h1>
+      <p class="muted mb-4">
+        Your workspace <b>{done.team.name}</b> runs <b>{done.farm === 'openprinthq' ? 'OpenPrintHQ' : 'Legacy farm'}</b>.
+        This API key lets a script or the installer connect your other services. It is shown once.
+      </p>
+      <div class="flex gap-2 mb-4">
+        <input class="input w-full font-mono text-sm" readonly value={done.api_key} aria-label="API key" />
+        <button class="btn" onclick={copyKey}>{copied ? 'Copied' : 'Copy'}</button>
+      </div>
+      <a class="btn primary w-full inline-block text-center" href="/auth/login">Sign in</a>
+    {:else if status && status.setup_complete}
+      <h1 class="text-xl font-semibold mb-2">This hub is already set up</h1>
+      <a class="btn primary w-full inline-block text-center" href="/">Go to ArtisanHub</a>
+    {:else if status}
+      <h1 class="text-xl font-semibold mb-2">Set up this hub</h1>
+      <p class="muted mb-4">
+        The setup token is in the hub's log from its first start, or is the HUB_SETUP_TOKEN the hub was started with.
+      </p>
+      <form class="space-y-4" onsubmit={submit}>
+        <fieldset>
+          <legend class="font-medium mb-1">Print farm</legend>
+          <p class="text-sm muted mb-2">
+            One farm per installation. Once the hub holds files, jobs or spools this choice is permanent. Only
+            OpenPrintHQ can later move to hosting.
+          </p>
+          <label class="flex items-center gap-2"><input type="radio" name="farm" value="openprinthq" bind:group={farm} required /> OpenPrintHQ</label>
+          <label class="flex items-center gap-2"><input type="radio" name="farm" value="legacy_farm" bind:group={farm} /> Legacy farm</label>
+        </fieldset>
+        <label class="block">
+          <span class="font-medium">Workspace name</span>
+          <input class="input w-full" bind:value={teamName} required maxlength="120" placeholder="My workshop" />
+        </label>
+        <label class="block">
+          <span class="font-medium">Setup token</span>
+          <input class="input w-full font-mono" bind:value={token} required autocomplete="off" />
+        </label>
+        {#if err}<p role="alert" style="color:var(--bad)">{err}</p>{/if}
+        <button class="btn primary w-full" disabled={busy || !farm}>{busy ? 'Setting up...' : 'Finish setup'}</button>
+      </form>
+    {:else if err}
+      <p role="alert" style="color:var(--bad)">{err}</p>
+    {:else}
+      <p class="muted">Checking the hub...</p>
+    {/if}
+  </div>
+</div>

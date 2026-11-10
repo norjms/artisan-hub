@@ -1,0 +1,386 @@
+/* Artisan Hub shared look for the supporting apps (InvenTree, Spoolman, Manyfold, ResourceSpace, Authentik sign-in).
+   Served by the hub at /theme/apps.css and added to each app's pages by npmplus (/_ahtheme/). apps.js sets
+   <html data-ah-app data-ah-skin data-ah-mode> from the person's hub choice before the app paints.
+   Skins: legacy_farm (default), openprinthq, classic. Same tokens as the hub's own app.css. */
+
+@font-face { font-family: "IBM Plex Sans"; font-weight: 300; font-display: swap; src: url(fonts/ibm-plex-sans-latin-300-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-display: swap; src: url(fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: swap; src: url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 700; font-display: swap; src: url(fonts/ibm-plex-sans-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 300; font-display: swap; src: url(fonts/inter-latin-300-normal.woff2) format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url(fonts/inter-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 500; font-display: swap; src: url(fonts/inter-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-display: swap; src: url(fonts/inter-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url(fonts/inter-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url(fonts/jetbrains-mono-latin-400-normal.woff2) format("woff2"); }
+
+/* ---------- tokens ---------- */
+html[data-ah-skin] {
+  --ah-font: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ah-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ah-bg: #f0f0f0; --ah-panel: #ffffff; --ah-panel-2: #f5f5f5; --ah-line: #e0e0e0; --ah-line-soft: #f0f0f0;
+  --ah-text: #333333; --ah-muted: #666666;
+  --ah-accent: #3b82f6; --ah-accent-hover: #2563eb; --ah-accent-text: #ffffff;
+  --ah-ok: #10b981; --ah-warn: #f59e0b; --ah-bad: #ef4444; --ah-info: #3b82f6;
+  --ah-header-bg: #f5f5f5; --ah-table-head: #f5f5f5; --ah-row-hover: #f8f8f8;
+  --ah-radius: 8px; --ah-radius-ctl: 6px; --ah-shadow: 0 1px 3px rgba(0,0,0,.08);
+  --ah-accent-soft: color-mix(in srgb, var(--ah-accent) 14%, transparent);
+  --ah-input-bg: var(--ah-panel);
+  --ah-page: var(--ah-bg);
+}
+html[data-ah-skin="legacy_farm"][data-ah-mode="dark"] {
+  --ah-bg: #1e1e1e; --ah-panel: #333333; --ah-panel-2: #3f3f3f; --ah-line: #444444; --ah-line-soft: #3a3a3a;
+  --ah-text: #ffffff; --ah-muted: #b0b0b0;
+  --ah-accent: #38bdf8; --ah-accent-hover: #0ea5e9; --ah-accent-text: #0b1720;
+  --ah-ok: #34d399; --ah-warn: #fbbf24; --ah-bad: #f87171; --ah-info: #60a5fa;
+  --ah-header-bg: #3f3f3f; --ah-table-head: #3f3f3f; --ah-row-hover: #3a3a3a;
+  --ah-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+html[data-ah-skin="openprinthq"] {
+  --ah-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ah-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ah-bg: #0d1117; --ah-panel: #151b24; --ah-panel-2: #1b2330; --ah-line: #26303f; --ah-line-soft: #1e2733;
+  --ah-text: #e6ebf2; --ah-muted: #7f8ca1;
+  --ah-accent: #7c6cff; --ah-accent-hover: #9a8cff; --ah-accent-text: #ffffff;
+  --ah-ok: #35c46b; --ah-warn: #f5a623; --ah-bad: #ff5c6c; --ah-info: #38bdf8;
+  --ah-header-bg: #111720; --ah-table-head: #1b2330; --ah-row-hover: #1b2330;
+  --ah-radius: 12px; --ah-radius-ctl: 8px; --ah-shadow: 0 10px 30px -12px rgba(0,0,0,.6);
+  --ah-input-bg: #0d1117;
+  --ah-page: radial-gradient(1200px 700px at 80% -10%, rgba(124,108,255,.10), transparent 60%),
+             radial-gradient(900px 500px at 0% 100%, rgba(255,176,32,.05), transparent 60%), #0d1117;
+}
+html[data-ah-skin="openprinthq"][data-ah-mode="light"] {
+  --ah-bg: #e9ebef; --ah-panel: #f5f6f9; --ah-panel-2: #e9ecf1; --ah-line: #b7bcc6; --ah-line-soft: #dde1e8;
+  --ah-text: #14171b; --ah-muted: #383d45;
+  --ah-accent: #6d5cf0; --ah-accent-hover: #5646d6;
+  --ah-ok: #1f9d57; --ah-warn: #b5730a; --ah-bad: #d63a4a; --ah-info: #1f7fb8;
+  --ah-header-bg: #f0f2f5; --ah-table-head: #e9ecf1; --ah-row-hover: #e9ecf1;
+  --ah-shadow: 0 10px 30px -14px rgba(0,0,0,.35);
+  --ah-input-bg: #f5f6f9;
+  --ah-page: radial-gradient(1200px 700px at 80% -10%, rgba(109,92,240,.12), transparent 60%),
+             radial-gradient(900px 500px at 0% 100%, rgba(176,111,0,.07), transparent 60%), #e9ebef;
+}
+html[data-ah-skin="classic"] {
+  --ah-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ah-bg: #f6f5f3; --ah-panel: #ffffff; --ah-panel-2: #f1efec; --ah-line: #e4e1dc; --ah-line-soft: #efece8;
+  --ah-text: #1c1917; --ah-muted: #78716c;
+  --ah-accent: #ea580c; --ah-accent-hover: #c2410c; --ah-accent-text: #ffffff;
+  --ah-ok: #15803d; --ah-warn: #b45309; --ah-bad: #b91c1c; --ah-info: #2563eb;
+  --ah-header-bg: #ffffff; --ah-table-head: transparent; --ah-row-hover: #f1efec;
+  --ah-radius: 14px; --ah-radius-ctl: 10px; --ah-shadow: none;
+}
+html[data-ah-skin="classic"][data-ah-mode="dark"] {
+  --ah-bg: #0f0e0d; --ah-panel: #1a1816; --ah-panel-2: #24211e; --ah-line: #34302b; --ah-line-soft: #2a2622;
+  --ah-text: #f5f3f0; --ah-muted: #a8a29e;
+  --ah-ok: #4ade80; --ah-warn: #fbbf24; --ah-bad: #f87171;
+  --ah-header-bg: #1a1816; --ah-row-hover: #24211e;
+}
+html[data-ah-mode="dark"] { color-scheme: dark; }
+html[data-ah-mode="light"] { color-scheme: light; }
+
+/* ---------- shared basics ---------- */
+html[data-ah-skin] body { font-family: var(--ah-font); -webkit-font-smoothing: antialiased; }
+html[data-ah-skin] code, html[data-ah-skin] pre, html[data-ah-skin] kbd { font-family: var(--ah-mono); }
+html[data-ah-skin] ::selection { background: var(--ah-accent-soft); }
+html[data-ah-skin] * { scrollbar-color: var(--ah-line) transparent; }
+
+/* ======================================================================
+   Spoolman (Refine + Ant Design 5). Its own light/dark is switched to match by apps.js.
+   ====================================================================== */
+html[data-ah-app="spoolman"] body,
+html[data-ah-app="spoolman"] .ant-layout { background: var(--ah-page) !important; color: var(--ah-text); }
+html[data-ah-app="spoolman"] .ant-layout,
+html[data-ah-app="spoolman"] .ant-layout * { font-family: var(--ah-font); }
+html[data-ah-app="spoolman"] .ant-layout-content { background: transparent !important; }
+html[data-ah-app="spoolman"] .ant-layout-header { background: var(--ah-header-bg) !important; box-shadow: 0 1px 0 var(--ah-line); border: 0 !important; }
+html[data-ah-app="spoolman"] .ant-layout-sider,
+html[data-ah-app="spoolman"] .ant-layout-sider-children,
+html[data-ah-app="spoolman"] .ant-layout-sider-trigger,
+html[data-ah-app="spoolman"] .ant-layout-sider .ant-menu { background: var(--ah-header-bg) !important; color: var(--ah-text) !important; border-inline-end: 0 !important; }
+html[data-ah-app="spoolman"] .ant-layout-sider { box-shadow: 1px 0 0 var(--ah-line); }
+html[data-ah-app="spoolman"] .ant-menu-item,
+html[data-ah-app="spoolman"] .ant-menu-submenu-title { color: var(--ah-text) !important; border-radius: var(--ah-radius-ctl) !important; }
+html[data-ah-app="spoolman"] .ant-menu-item:hover:not(.ant-menu-item-selected) { background: color-mix(in srgb, var(--ah-text) 7%, transparent) !important; }
+html[data-ah-app="spoolman"] .ant-menu-item-selected { background: var(--ah-accent-soft) !important; color: var(--ah-accent) !important; font-weight: 600; }
+html[data-ah-app="spoolman"] .ant-menu-item-selected .anticon,
+html[data-ah-app="spoolman"] .ant-menu-item-selected a { color: var(--ah-accent) !important; }
+html[data-ah-app="spoolman"] .ant-card,
+html[data-ah-app="spoolman"] .ant-table-wrapper .ant-table,
+html[data-ah-app="spoolman"] .ant-descriptions-bordered .ant-descriptions-view,
+html[data-ah-app="spoolman"] .ant-list,
+html[data-ah-app="spoolman"] .ant-collapse { background: var(--ah-panel) !important; border-color: var(--ah-line) !important; border-radius: var(--ah-radius) !important; color: var(--ah-text); }
+html[data-ah-app="spoolman"] .ant-card { box-shadow: var(--ah-shadow); }
+html[data-ah-app="spoolman"] .ant-card-head { border-bottom-color: var(--ah-line) !important; color: var(--ah-text) !important; }
+html[data-ah-app="spoolman"] .ant-table-thead > tr > th,
+html[data-ah-app="spoolman"] .ant-table-thead > tr > td { background: var(--ah-table-head) !important; color: var(--ah-muted) !important; font-size: .72rem;
+  text-transform: uppercase; letter-spacing: .05em; font-weight: 600 !important; border-bottom: 1px solid var(--ah-line) !important; }
+html[data-ah-app="spoolman"] .ant-table-thead > tr > th::before { background: var(--ah-line) !important; }
+html[data-ah-app="spoolman"] .ant-table-tbody > tr > td { border-bottom: 1px solid var(--ah-line-soft) !important; background: transparent; }
+html[data-ah-app="spoolman"] .ant-table-tbody > tr:hover > td,
+html[data-ah-app="spoolman"] .ant-table-tbody > tr > td.ant-table-cell-row-hover { background: var(--ah-row-hover) !important; }
+html[data-ah-app="spoolman"] .ant-table-tbody > tr > td.ant-table-column-sort,
+html[data-ah-app="spoolman"] .ant-table-thead > tr > th.ant-table-column-sort { background: color-mix(in srgb, var(--ah-text) 3%, transparent); }
+html[data-ah-app="spoolman"] .ant-table-cell-fix-left,
+html[data-ah-app="spoolman"] .ant-table-cell-fix-right { background: var(--ah-panel) !important; }
+html[data-ah-app="spoolman"] .ant-descriptions-bordered .ant-descriptions-item-label { background: var(--ah-table-head) !important; color: var(--ah-muted) !important; }
+html[data-ah-app="spoolman"] .ant-descriptions-bordered .ant-descriptions-row,
+html[data-ah-app="spoolman"] .ant-descriptions-bordered .ant-descriptions-item-label,
+html[data-ah-app="spoolman"] .ant-descriptions-bordered .ant-descriptions-item-content { border-color: var(--ah-line) !important; }
+html[data-ah-app="spoolman"] .ant-btn { border-radius: var(--ah-radius-ctl) !important; font-weight: 600; box-shadow: none !important; }
+html[data-ah-app="spoolman"] .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous),
+html[data-ah-app="spoolman"] .ant-btn-color-primary.ant-btn-variant-solid:not(:disabled) { background: var(--ah-accent) !important; border-color: var(--ah-accent) !important; color: var(--ah-accent-text) !important; }
+html[data-ah-app="spoolman"] .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover { background: var(--ah-accent-hover) !important; border-color: var(--ah-accent-hover) !important; }
+html[data-ah-app="spoolman"] .ant-btn-default:not(:disabled),
+html[data-ah-app="spoolman"] .ant-btn-variant-outlined:not(:disabled):not(.ant-btn-dangerous) { background: transparent !important; border-color: var(--ah-line) !important; color: var(--ah-text) !important; }
+html[data-ah-app="spoolman"] .ant-btn-default:not(:disabled):hover { background: var(--ah-panel-2) !important; border-color: var(--ah-muted) !important; }
+html[data-ah-app="spoolman"] .ant-btn-link,
+html[data-ah-app="spoolman"] .ant-btn-color-link,
+html[data-ah-app="spoolman"] .ant-layout-content a:not(.ant-btn) { color: var(--ah-accent) !important; }
+html[data-ah-app="spoolman"] .ant-input,
+html[data-ah-app="spoolman"] .ant-input-affix-wrapper,
+html[data-ah-app="spoolman"] .ant-input-number,
+html[data-ah-app="spoolman"] .ant-input-number-group-addon,
+html[data-ah-app="spoolman"] .ant-select:not(.ant-select-customize-input) .ant-select-selector,
+html[data-ah-app="spoolman"] .ant-select-outlined .ant-select-selector,
+html[data-ah-app="spoolman"] .ant-picker { background: var(--ah-input-bg) !important; border-color: var(--ah-line) !important; color: var(--ah-text) !important; border-radius: var(--ah-radius-ctl) !important; }
+html[data-ah-app="spoolman"] .ant-input:focus, html[data-ah-app="spoolman"] .ant-input-focused,
+html[data-ah-app="spoolman"] .ant-input-affix-wrapper-focused, html[data-ah-app="spoolman"] .ant-input-number-focused,
+html[data-ah-app="spoolman"] .ant-select-focused .ant-select-selector, html[data-ah-app="spoolman"] .ant-picker-focused {
+  border-color: var(--ah-accent) !important; box-shadow: 0 0 0 3px var(--ah-accent-soft) !important; }
+html[data-ah-app="spoolman"] .ant-select-dropdown,
+html[data-ah-app="spoolman"] .ant-dropdown-menu,
+html[data-ah-app="spoolman"] .ant-popover-inner,
+html[data-ah-app="spoolman"] .ant-picker-dropdown .ant-picker-panel-container,
+html[data-ah-app="spoolman"] .ant-modal-content,
+html[data-ah-app="spoolman"] .ant-modal-header,
+html[data-ah-app="spoolman"] .ant-drawer-content,
+html[data-ah-app="spoolman"] .ant-message-notice-content,
+html[data-ah-app="spoolman"] .ant-notification-notice { background: var(--ah-panel) !important; color: var(--ah-text); }
+html[data-ah-app="spoolman"] .ant-modal-content { border-radius: var(--ah-radius) !important; border: 1px solid var(--ah-line); }
+html[data-ah-app="spoolman"] .ant-select-item-option-selected:not(.ant-select-item-option-disabled) { background: var(--ah-accent-soft) !important; }
+html[data-ah-app="spoolman"] .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+html[data-ah-app="spoolman"] .ant-dropdown-menu-item:hover { background: var(--ah-panel-2) !important; }
+html[data-ah-app="spoolman"] .ant-checkbox-checked .ant-checkbox-inner,
+html[data-ah-app="spoolman"] .ant-radio-checked .ant-radio-inner,
+html[data-ah-app="spoolman"] .ant-switch.ant-switch-checked,
+html[data-ah-app="spoolman"] .ant-slider-track,
+html[data-ah-app="spoolman"] .ant-progress-bg,
+html[data-ah-app="spoolman"] .ant-tabs-ink-bar,
+html[data-ah-app="spoolman"] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) { background-color: var(--ah-accent) !important; border-color: var(--ah-accent) !important; }
+html[data-ah-app="spoolman"] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) { color: var(--ah-accent-text) !important; }
+html[data-ah-app="spoolman"] .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn,
+html[data-ah-app="spoolman"] .ant-tabs-tab:hover,
+html[data-ah-app="spoolman"] .ant-pagination-item-active a,
+html[data-ah-app="spoolman"] .ant-spin-dot-item { color: var(--ah-accent) !important; }
+html[data-ah-app="spoolman"] .ant-spin-dot-item { background-color: var(--ah-accent) !important; }
+html[data-ah-app="spoolman"] .ant-pagination-item-active { border-color: var(--ah-accent) !important; background: transparent !important; }
+html[data-ah-app="spoolman"] .ant-tabs-nav::before { border-color: var(--ah-line) !important; }
+html[data-ah-app="spoolman"] .ant-tag { border-radius: 999px !important; }
+html[data-ah-app="spoolman"] .ant-typography, html[data-ah-app="spoolman"] h1, html[data-ah-app="spoolman"] h2,
+html[data-ah-app="spoolman"] h3, html[data-ah-app="spoolman"] h4, html[data-ah-app="spoolman"] .ant-page-header-heading-title { color: var(--ah-text); }
+html[data-ah-app="spoolman"] .ant-statistic-title, html[data-ah-app="spoolman"] .ant-typography-secondary { color: var(--ah-muted) !important; }
+html[data-ah-app="spoolman"] .ant-divider { border-color: var(--ah-line) !important; }
+
+html[data-ah-app="spoolman"] .ant-layout-sider-children > div:first-child { background: var(--ah-header-bg) !important; box-shadow: 0 1px 0 var(--ah-line); }
+html[data-ah-app="spoolman"] .ant-layout-sider-trigger,
+html[data-ah-app="spoolman"] .ant-layout-sider-trigger .ant-btn { background: var(--ah-header-bg) !important; color: var(--ah-muted) !important; border-top: 1px solid var(--ah-line); }
+html[data-ah-app="spoolman"] .ant-layout-footer { background: transparent !important; color: var(--ah-muted) !important; }
+html[data-ah-app="spoolman"] .ant-card-actions { background: var(--ah-panel-2) !important; border-color: var(--ah-line) !important; }
+html[data-ah-app="spoolman"] .ant-card-actions > li:not(:last-child) { border-color: var(--ah-line) !important; }
+html[data-ah-app="spoolman"] .ant-card-actions a, html[data-ah-app="spoolman"] .ant-card-actions .anticon { color: var(--ah-accent) !important; }
+html[data-ah-app="spoolman"] .ant-float-btn-primary .ant-float-btn-body { background: var(--ah-accent) !important; }
+html[data-ah-app="spoolman"] .ant-float-btn-primary .ant-float-btn-icon { color: var(--ah-accent-text) !important; }
+html[data-ah-app="spoolman"] .ant-table-column-sorter-up.active, html[data-ah-app="spoolman"] .ant-table-column-sorter-down.active,
+html[data-ah-app="spoolman"] .ant-table-filter-trigger.active { color: var(--ah-accent) !important; }
+
+/* ======================================================================
+   InvenTree (Mantine 7). Its light/dark is switched to match by apps.js; colours come from Mantine's variables.
+   ====================================================================== */
+html[data-ah-app="inventree"] {
+  --mantine-font-family: var(--ah-font); --mantine-font-family-headings: var(--ah-font); --mantine-font-family-monospace: var(--ah-mono);
+  --mantine-color-body: var(--ah-panel); --mantine-color-text: var(--ah-text); --mantine-color-dimmed: var(--ah-muted);
+  --mantine-color-default: var(--ah-panel); --mantine-color-default-hover: var(--ah-panel-2); --mantine-color-default-color: var(--ah-text);
+  --mantine-color-default-border: var(--ah-line);
+  --mantine-color-placeholder: var(--ah-muted); --mantine-color-anchor: var(--ah-accent);
+  --mantine-primary-color-filled: var(--ah-accent); --mantine-primary-color-filled-hover: var(--ah-accent-hover);
+  --mantine-primary-color-light: var(--ah-accent-soft); --mantine-primary-color-light-hover: color-mix(in srgb, var(--ah-accent) 22%, transparent);
+  --mantine-primary-color-light-color: var(--ah-accent); --mantine-primary-color-contrast: var(--ah-accent-text);
+  --mantine-primary-color-0: color-mix(in srgb, var(--ah-accent) 8%, var(--ah-panel)); --mantine-primary-color-1: color-mix(in srgb, var(--ah-accent) 16%, var(--ah-panel));
+  --mantine-primary-color-2: color-mix(in srgb, var(--ah-accent) 30%, var(--ah-panel)); --mantine-primary-color-3: color-mix(in srgb, var(--ah-accent) 50%, var(--ah-panel));
+  --mantine-primary-color-4: color-mix(in srgb, var(--ah-accent) 75%, var(--ah-panel)); --mantine-primary-color-5: var(--ah-accent);
+  --mantine-primary-color-6: var(--ah-accent); --mantine-primary-color-7: var(--ah-accent-hover); --mantine-primary-color-8: var(--ah-accent-hover); --mantine-primary-color-9: var(--ah-accent-hover);
+  --mantine-radius-default: var(--ah-radius-ctl);
+}
+html[data-ah-app="inventree"][data-mantine-color-scheme],
+html[data-ah-app="inventree"][data-mantine-color-scheme="dark"] {
+  --mantine-color-body: var(--ah-panel); --mantine-color-text: var(--ah-text); --mantine-color-dimmed: var(--ah-muted);
+  --mantine-color-default: var(--ah-panel); --mantine-color-default-hover: var(--ah-panel-2); --mantine-color-default-color: var(--ah-text);
+  --mantine-color-default-border: var(--ah-line); --mantine-color-placeholder: var(--ah-muted); --mantine-color-anchor: var(--ah-accent);
+  --mantine-primary-color-filled: var(--ah-accent); --mantine-primary-color-filled-hover: var(--ah-accent-hover);
+  --mantine-primary-color-light: var(--ah-accent-soft); --mantine-primary-color-light-color: var(--ah-accent);
+}
+html[data-ah-app="inventree"][data-ah-mode="dark"] {
+  --mantine-color-dark-0: var(--ah-text); --mantine-color-dark-1: color-mix(in srgb, var(--ah-text) 80%, var(--ah-bg));
+  --mantine-color-dark-2: var(--ah-muted); --mantine-color-dark-3: color-mix(in srgb, var(--ah-muted) 70%, var(--ah-bg));
+  --mantine-color-dark-4: var(--ah-line); --mantine-color-dark-5: var(--ah-panel-2); --mantine-color-dark-6: var(--ah-panel);
+  --mantine-color-dark-7: var(--ah-bg); --mantine-color-dark-8: var(--ah-bg); --mantine-color-dark-9: var(--ah-bg);
+}
+html[data-ah-app="inventree"][data-ah-mode="light"] {
+  --mantine-color-gray-0: var(--ah-panel-2); --mantine-color-gray-1: var(--ah-bg); --mantine-color-gray-2: var(--ah-line-soft);
+  --mantine-color-gray-3: var(--ah-line); --mantine-color-gray-4: var(--ah-line);
+}
+html[data-ah-app="inventree"] body { background: var(--ah-page) !important; color: var(--ah-text); }
+html[data-ah-app="inventree"] .mantine-Paper-root,
+html[data-ah-app="inventree"] .mantine-Card-root { background: var(--ah-panel); border-color: var(--ah-line); }
+html[data-ah-app="inventree"] .mantine-Table-th { color: var(--ah-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; background: var(--ah-table-head); }
+html[data-ah-app="inventree"] .mantine-Table-tr:hover { background: var(--ah-row-hover); }
+html[data-ah-app="inventree"] .mantine-Tabs-tab[data-active] { color: var(--ah-accent); }
+html[data-ah-app="inventree"] .mantine-Input-input:focus, html[data-ah-app="inventree"] .mantine-Input-input:focus-within { border-color: var(--ah-accent); }
+html[data-ah-app="inventree"] .mantine-Button-root[data-variant="filled"]:not([data-disabled]):not([style*="--button-bg: var(--mantine-color-red"]):not([style*="--button-bg: var(--mantine-color-green"]) { color: var(--ah-accent-text); }
+
+/* InvenTree's primary colour (indigo by default) is used directly for titles and some buttons: point it at the accent. */
+html[data-ah-app="inventree"], html[data-ah-app="inventree"][data-mantine-color-scheme] { --mantine-color-indigo-0: var(--mantine-primary-color-0); --mantine-color-indigo-1: var(--mantine-primary-color-1); --mantine-color-indigo-2: var(--mantine-primary-color-2); --mantine-color-indigo-3: var(--mantine-primary-color-3); --mantine-color-indigo-4: var(--mantine-primary-color-4); --mantine-color-indigo-5: var(--mantine-primary-color-5); --mantine-color-indigo-6: var(--mantine-primary-color-6); --mantine-color-indigo-7: var(--mantine-primary-color-7); --mantine-color-indigo-8: var(--mantine-primary-color-8); --mantine-color-indigo-9: var(--mantine-primary-color-9);
+  --mantine-color-indigo-filled: var(--ah-accent); --mantine-color-indigo-filled-hover: var(--ah-accent-hover);
+  --mantine-color-indigo-light: var(--ah-accent-soft); --mantine-color-indigo-light-hover: color-mix(in srgb, var(--ah-accent) 22%, transparent);
+  --mantine-color-indigo-light-color: var(--ah-accent); --mantine-color-indigo-text: var(--ah-accent);
+  --mantine-color-indigo-outline: var(--ah-accent); --mantine-color-indigo-outline-hover: var(--ah-accent-soft); }
+html[data-ah-app="spoolman"] .ant-layout-sider-trigger .anticon { color: var(--ah-muted) !important; }
+
+/* ======================================================================
+   Manyfold (Bootstrap 5.3 with a Bootswatch theme). Light/dark set through data-bs-theme by apps.js.
+   ====================================================================== */
+html[data-ah-app="manyfold"], html[data-ah-app="manyfold"] [data-bs-theme] {
+  --bs-font-sans-serif: var(--ah-font); --bs-body-font-family: var(--ah-font); --bs-font-monospace: var(--ah-mono);
+  --bs-body-bg: var(--ah-bg); --bs-body-bg-rgb: 240,240,240; --bs-body-color: var(--ah-text); --bs-emphasis-color: var(--ah-text);
+  --bs-secondary-color: var(--ah-muted); --bs-tertiary-color: var(--ah-muted);
+  --bs-secondary-bg: var(--ah-panel-2); --bs-tertiary-bg: var(--ah-panel-2);
+  --bs-border-color: var(--ah-line); --bs-border-color-translucent: var(--ah-line);
+  --bs-border-radius: var(--ah-radius-ctl); --bs-border-radius-lg: var(--ah-radius); --bs-border-radius-sm: 4px;
+  --bs-primary: var(--ah-accent); --bs-link-color: var(--ah-accent); --bs-link-hover-color: var(--ah-accent-hover);
+  --bs-link-color-rgb: 59,130,246; --bs-link-hover-color-rgb: 37,99,235; --bs-primary-rgb: 59,130,246;
+  --bs-primary-text-emphasis: var(--ah-accent); --bs-primary-bg-subtle: var(--ah-accent-soft); --bs-primary-border-subtle: var(--ah-accent);
+  --bs-focus-ring-color: var(--ah-accent-soft);
+}
+html[data-ah-app="manyfold"][data-ah-skin="legacy_farm"][data-ah-mode="dark"],
+html[data-ah-app="manyfold"][data-ah-skin="legacy_farm"][data-ah-mode="dark"] [data-bs-theme] { --bs-body-bg-rgb: 30,30,30; --bs-primary-rgb: 56,189,248; --bs-link-color-rgb: 56,189,248; --bs-link-hover-color-rgb: 14,165,233; }
+html[data-ah-app="manyfold"][data-ah-skin="openprinthq"],
+html[data-ah-app="manyfold"][data-ah-skin="openprinthq"] [data-bs-theme] { --bs-body-bg-rgb: 13,17,23; --bs-primary-rgb: 124,108,255; --bs-link-color-rgb: 154,140,255; --bs-link-hover-color-rgb: 124,108,255; }
+html[data-ah-app="manyfold"][data-ah-skin="openprinthq"][data-ah-mode="light"],
+html[data-ah-app="manyfold"][data-ah-skin="openprinthq"][data-ah-mode="light"] [data-bs-theme] { --bs-body-bg-rgb: 233,235,239; --bs-primary-rgb: 109,92,240; --bs-link-color-rgb: 109,92,240; --bs-link-hover-color-rgb: 86,70,214; }
+html[data-ah-app="manyfold"][data-ah-skin="classic"],
+html[data-ah-app="manyfold"][data-ah-skin="classic"] [data-bs-theme] { --bs-body-bg-rgb: 246,245,243; --bs-primary-rgb: 234,88,12; --bs-link-color-rgb: 234,88,12; --bs-link-hover-color-rgb: 194,65,12; }
+html[data-ah-app="manyfold"][data-ah-skin="classic"][data-ah-mode="dark"],
+html[data-ah-app="manyfold"][data-ah-skin="classic"][data-ah-mode="dark"] [data-bs-theme] { --bs-body-bg-rgb: 15,14,13; }
+html[data-ah-app="manyfold"] body { background: var(--ah-page) !important; color: var(--ah-text); font-family: var(--ah-font); }
+html[data-ah-app="manyfold"] #main-navbar { background: var(--ah-header-bg) !important; box-shadow: 0 1px 0 var(--ah-line);
+  --bs-navbar-color: var(--ah-text); --bs-navbar-hover-color: var(--ah-accent); --bs-navbar-active-color: var(--ah-accent); --bs-navbar-brand-color: var(--ah-text); }
+html[data-ah-app="manyfold"] #main-navbar .nav-link { border-radius: 8px; color: var(--ah-text); }
+html[data-ah-app="manyfold"] #main-navbar .nav-link:hover { background: color-mix(in srgb, var(--ah-text) 7%, transparent); }
+html[data-ah-app="manyfold"] #main-navbar .nav-link.active { background: var(--ah-accent-soft); color: var(--ah-accent); font-weight: 600; }
+html[data-ah-app="manyfold"] .card,
+html[data-ah-app="manyfold"] .list-group-item,
+html[data-ah-app="manyfold"] .modal-content,
+html[data-ah-app="manyfold"] .dropdown-menu,
+html[data-ah-app="manyfold"] .offcanvas { --bs-card-bg: var(--ah-panel); --bs-list-group-bg: var(--ah-panel); --bs-modal-bg: var(--ah-panel);
+  --bs-dropdown-bg: var(--ah-panel); --bs-offcanvas-bg: var(--ah-panel); --bs-card-border-color: var(--ah-line); --bs-list-group-border-color: var(--ah-line);
+  --bs-dropdown-link-active-bg: var(--ah-accent); --bs-dropdown-link-hover-bg: var(--ah-panel-2);
+  background-color: var(--ah-panel); border-color: var(--ah-line); color: var(--ah-text); }
+html[data-ah-app="manyfold"] .card { border-radius: var(--ah-radius); box-shadow: var(--ah-shadow); overflow: hidden; }
+html[data-ah-app="manyfold"] .card-header, html[data-ah-app="manyfold"] .card-footer { background: var(--ah-panel-2); border-color: var(--ah-line); }
+html[data-ah-app="manyfold"] .btn-primary, html[data-ah-app="manyfold"] .btn-outline-primary:hover, html[data-ah-app="manyfold"] .btn-check:checked + .btn-outline-primary {
+  --bs-btn-bg: var(--ah-accent); --bs-btn-border-color: var(--ah-accent); --bs-btn-color: var(--ah-accent-text);
+  --bs-btn-hover-bg: var(--ah-accent-hover); --bs-btn-hover-border-color: var(--ah-accent-hover); --bs-btn-hover-color: var(--ah-accent-text);
+  --bs-btn-active-bg: var(--ah-accent-hover); --bs-btn-active-border-color: var(--ah-accent-hover); --bs-btn-active-color: var(--ah-accent-text);
+  --bs-btn-disabled-bg: var(--ah-accent); --bs-btn-disabled-border-color: var(--ah-accent); }
+html[data-ah-app="manyfold"] .btn-outline-primary { --bs-btn-color: var(--ah-accent); --bs-btn-border-color: var(--ah-accent); }
+html[data-ah-app="manyfold"] .btn-secondary, html[data-ah-app="manyfold"] .btn-outline-secondary, html[data-ah-app="manyfold"] .btn-light {
+  --bs-btn-bg: transparent; --bs-btn-color: var(--ah-text); --bs-btn-border-color: var(--ah-line);
+  --bs-btn-hover-bg: var(--ah-panel-2); --bs-btn-hover-color: var(--ah-text); --bs-btn-hover-border-color: var(--ah-muted);
+  --bs-btn-active-bg: var(--ah-panel-2); --bs-btn-active-color: var(--ah-text); --bs-btn-active-border-color: var(--ah-muted); }
+html[data-ah-app="manyfold"] .btn { border-radius: var(--ah-radius-ctl); font-weight: 600; }
+html[data-ah-app="manyfold"] .bg-primary:not(#main-navbar), html[data-ah-app="manyfold"] .badge.bg-primary, html[data-ah-app="manyfold"] .text-bg-primary { background-color: var(--ah-accent) !important; color: var(--ah-accent-text) !important; }
+html[data-ah-app="manyfold"] .text-primary { color: var(--ah-accent) !important; }
+html[data-ah-app="manyfold"] .form-control, html[data-ah-app="manyfold"] .form-select { background-color: var(--ah-input-bg); border-color: var(--ah-line); color: var(--ah-text); }
+html[data-ah-app="manyfold"] .form-control:focus, html[data-ah-app="manyfold"] .form-select:focus { border-color: var(--ah-accent); box-shadow: 0 0 0 3px var(--ah-accent-soft); }
+html[data-ah-app="manyfold"] .form-check-input:checked { background-color: var(--ah-accent); border-color: var(--ah-accent); }
+html[data-ah-app="manyfold"] .nav-pills, html[data-ah-app="manyfold"] .nav-tabs { --bs-nav-pills-link-active-bg: var(--ah-accent); --bs-nav-tabs-link-active-bg: var(--ah-panel); --bs-nav-link-color: var(--ah-text); --bs-nav-link-hover-color: var(--ah-accent); }
+html[data-ah-app="manyfold"] .page-link { --bs-pagination-active-bg: var(--ah-accent); --bs-pagination-active-border-color: var(--ah-accent); --bs-pagination-bg: var(--ah-panel); --bs-pagination-border-color: var(--ah-line); --bs-pagination-color: var(--ah-text); }
+html[data-ah-app="manyfold"] .pagination { --bs-pagination-active-bg: var(--ah-accent); --bs-pagination-active-border-color: var(--ah-accent); --bs-pagination-bg: var(--ah-panel); --bs-pagination-border-color: var(--ah-line); --bs-pagination-color: var(--ah-text); }
+html[data-ah-app="manyfold"] .list-group-item.active { background: var(--ah-accent); border-color: var(--ah-accent); color: var(--ah-accent-text); }
+html[data-ah-app="manyfold"] .table { --bs-table-bg: transparent; --bs-table-color: var(--ah-text); --bs-table-border-color: var(--ah-line-soft); --bs-table-hover-bg: var(--ah-row-hover); --bs-table-striped-bg: var(--ah-row-hover); }
+html[data-ah-app="manyfold"] .table > thead th { color: var(--ah-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; background: var(--ah-table-head); border-bottom-color: var(--ah-line); }
+html[data-ah-app="manyfold"] footer, html[data-ah-app="manyfold"] .footer { background: transparent !important; color: var(--ah-muted); border-color: var(--ah-line) !important; }
+
+/* ======================================================================
+   ResourceSpace 11. Light is its own design tokens; dark covers the main surfaces.
+   ====================================================================== */
+html[data-ah-app="resourcespace"] {
+  --colour-brand-primary-default: var(--ah-accent); --colour-brand-primary-hover: var(--ah-accent-hover);
+  --colour-brand-primary-dark: var(--ah-accent-hover); --colour-brand-primary-darkest: var(--ah-accent-hover);
+  --colour-brand-primary-light: color-mix(in srgb, var(--ah-accent) 22%, var(--ah-panel)); --colour-brand-primary-lightest: var(--ah-accent-soft);
+  --colour-link-primary-default: var(--ah-accent); --colour-link-primary-hover: var(--ah-accent-hover);
+  --colour-surface-view-background: var(--ah-bg); --colour-surface-header-background: var(--ah-header-bg);
+  --colour-surface-card-content-background: var(--ah-panel); --colour-surface-card-image-background: var(--ah-panel-2);
+  --colour-surface-mode-surface: var(--ah-panel); --colour-surface-page-title-background: var(--ah-panel-2);
+  --colour-surface-breadcrumb-background: var(--ah-accent-soft);
+  --colour-typography-900: var(--ah-text);
+  --form-field-border: var(--ah-line); --form-form-field-background: var(--ah-input-bg);
+}
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] {
+  --colour-neutral-50: var(--ah-panel); --colour-neutral-100: var(--ah-panel-2); --colour-neutral-200: var(--ah-panel-2);
+  --colour-neutral-300: var(--ah-line); --colour-neutral-400: var(--ah-line); --colour-neutral-600: var(--ah-muted);
+  --colour-neutral-700: var(--ah-muted); --colour-neutral-800: var(--ah-text); --colour-neutral-900: var(--ah-text);
+  --colour-global-white: var(--ah-panel); --colour-global-black: var(--ah-text);
+  --colour-surface-900: var(--ah-text); --colour-surface-50: var(--ah-panel); --colour-surface-200: var(--ah-panel-2);
+}
+html[data-ah-app="resourcespace"] body, html[data-ah-app="resourcespace"] { background: var(--ah-page) !important; color: var(--ah-text) !important; font-family: var(--ah-font) !important; }
+html[data-ah-app="resourcespace"] body * { font-family: var(--ah-font); }
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] #CentralSpace h1, html[data-ah-app="resourcespace"][data-ah-mode="dark"] #CentralSpace h2, html[data-ah-app="resourcespace"][data-ah-mode="dark"] .BasicsBox h1 { color: var(--ah-text); }
+html[data-ah-app="resourcespace"] #Header, html[data-ah-app="resourcespace"] #header-container { background: var(--ah-header-bg) !important; box-shadow: 0 1px 0 var(--ah-line); }
+html[data-ah-app="resourcespace"] #Header li a, html[data-ah-app="resourcespace"] #HeaderNav1 a, html[data-ah-app="resourcespace"] #HeaderNav2 a { color: var(--ah-text) !important; }
+html[data-ah-app="resourcespace"] #Header .UploadButton a { background: var(--ah-accent) !important; color: var(--ah-accent-text) !important; border-radius: var(--ah-radius-ctl); }
+html[data-ah-app="resourcespace"] .ResourcePanel, html[data-ah-app="resourcespace"] .RecordBox, html[data-ah-app="resourcespace"] .BasicsBox .Question,
+html[data-ah-app="resourcespace"] .RecordPanel, html[data-ah-app="resourcespace"] .ResourcePanelSmall, html[data-ah-app="resourcespace"] .ResourcePanelLarge,
+html[data-ah-app="resourcespace"] .PageInformal, html[data-ah-app="resourcespace"] #login_box, html[data-ah-app="resourcespace"] .ListView,
+html[data-ah-app="resourcespace"] #SearchBox, html[data-ah-app="resourcespace"] #ResearchBoxPanel, html[data-ah-app="resourcespace"] .TopInpageNav {
+  background: var(--ah-panel) !important; color: var(--ah-text) !important; border-color: var(--ah-line) !important; }
+html[data-ah-app="resourcespace"] .ResourcePanel, html[data-ah-app="resourcespace"] #login_box, html[data-ah-app="resourcespace"] .RecordBox { border: 1px solid var(--ah-line); border-radius: var(--ah-radius) !important; box-shadow: var(--ah-shadow); }
+html[data-ah-app="resourcespace"] .ResourcePanelInfo, html[data-ah-app="resourcespace"] .ResourcePanelInfo a, html[data-ah-app="resourcespace"] .ListTitle a { color: var(--ah-muted) !important; }
+html[data-ah-app="resourcespace"] .ResourcePanel.Selected { outline-color: var(--ah-accent) !important; }
+html[data-ah-app="resourcespace"] a:link, html[data-ah-app="resourcespace"] a:visited { color: var(--ah-accent); }
+html[data-ah-app="resourcespace"] input[type=text], html[data-ah-app="resourcespace"] input[type=password], html[data-ah-app="resourcespace"] input[type=email],
+html[data-ah-app="resourcespace"] input[type=number], html[data-ah-app="resourcespace"] select, html[data-ah-app="resourcespace"] textarea,
+html[data-ah-app="resourcespace"] .stdwidth, html[data-ah-app="resourcespace"] .SearchWidth {
+  background: var(--ah-input-bg) !important; color: var(--ah-text) !important; border: 1px solid var(--ah-line) !important; border-radius: var(--ah-radius-ctl) !important; }
+html[data-ah-app="resourcespace"] input:focus, html[data-ah-app="resourcespace"] select:focus, html[data-ah-app="resourcespace"] textarea:focus { border-color: var(--ah-accent) !important; outline: 0; box-shadow: 0 0 0 3px var(--ah-accent-soft); }
+html[data-ah-app="resourcespace"] input[type=submit], html[data-ah-app="resourcespace"] input[type=button], html[data-ah-app="resourcespace"] button.RSButton,
+html[data-ah-app="resourcespace"] .button, html[data-ah-app="resourcespace"] button[type=submit] {
+  background: var(--ah-accent) !important; border-color: var(--ah-accent) !important; color: var(--ah-accent-text) !important; border-radius: var(--ah-radius-ctl) !important; font-weight: 600; }
+html[data-ah-app="resourcespace"] input[type=submit]:hover, html[data-ah-app="resourcespace"] input[type=button]:hover { background: var(--ah-accent-hover) !important; }
+html[data-ah-app="resourcespace"] .ListviewTitleStyle td, html[data-ah-app="resourcespace"] .ListviewStyle th {
+  background: var(--ah-table-head) !important; color: var(--ah-muted) !important; text-transform: uppercase; font-size: .72rem; letter-spacing: .05em; }
+html[data-ah-app="resourcespace"] .ListviewStyle td { border-color: var(--ah-line-soft) !important; color: var(--ah-text); }
+html[data-ah-app="resourcespace"] .ListviewStyle tr:hover td { background: var(--ah-row-hover) !important; }
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] .ui-widget-content, html[data-ah-app="resourcespace"][data-ah-mode="dark"] .ui-dialog,
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] .ui-widget-header { background: var(--ah-panel) !important; color: var(--ah-text) !important; border-color: var(--ah-line) !important; }
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] #Header img.HeaderLogo, html[data-ah-app="resourcespace"][data-ah-mode="dark"] #Header li a img { filter: none; }
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] #CentralSpaceLogin, html[data-ah-app="resourcespace"][data-ah-mode="dark"] #LoginHeader { color: var(--ah-text) !important; }
+
+html[data-ah-app="resourcespace"] .InpageNavLeftBlock.icondisplay, html[data-ah-app="resourcespace"] .update_result_order_button,
+html[data-ah-app="resourcespace"] .TopInpageNav select { background: var(--ah-panel-2) !important; border: 1px solid var(--ah-line) !important; border-radius: var(--ah-radius-ctl) !important; color: var(--ah-text) !important; }
+html[data-ah-app="resourcespace"] .TopInpageNav { background: transparent !important; }
+html[data-ah-app="resourcespace"] .BreadcrumbsBoxTheme { background: var(--ah-panel-2) !important; border: 1px solid var(--ah-line); border-radius: var(--ah-radius-ctl); }
+html[data-ah-app="resourcespace"] .BreadcrumbsBoxTheme a { color: var(--ah-text) !important; }
+html[data-ah-app="resourcespace"] .collection-bar-toggle-button { background: var(--ah-accent) !important; color: var(--ah-accent-text) !important; border-radius: var(--ah-radius-ctl); }
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] #header-container .logo img, html[data-ah-app="resourcespace"][data-ah-mode="dark"] #Header .HeaderImgLink img,
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] #header-container i, html[data-ah-app="resourcespace"][data-ah-mode="dark"] #Header li a i { filter: invert(1) hue-rotate(180deg); }
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] #Header .UploadButton i { filter: none; }
+html[data-ah-app="resourcespace"][data-ah-mode="dark"] .stripicon, html[data-ah-app="resourcespace"][data-ah-mode="dark"] .icondisplay a span { filter: invert(.85); }
+
+/* OpenPrintHQ extras everywhere: glowing primary buttons */
+html[data-ah-skin="openprinthq"] .ant-btn-primary:not(:disabled),
+html[data-ah-skin="openprinthq"] .btn-primary,
+html[data-ah-skin="openprinthq"] .mantine-Button-root[data-variant="filled"],
+html[data-ah-skin="openprinthq"][data-ah-app="resourcespace"] input[type=submit] { box-shadow: 0 6px 20px -8px var(--ah-accent) !important; }

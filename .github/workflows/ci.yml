@@ -1,0 +1,94 @@
+name: ci
+
+# Tests, secret scan and provenance check for every pull request and every push to main.
+# GitHub-hosted runners only. Never point this repository at a self-hosted runner: a pull request from a fork
+# would run its code there.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.30.1
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    # Same base as the image, so the system libraries match what ships.
+    container: python:3.12-slim
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Install dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends libxml2 libxslt1.1
+          pip install --no-cache-dir -r backend/requirements.txt
+      - name: Backend tests
+        working-directory: backend
+        run: python -m pytest -q -p no:cacheprovider tests
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 22
+      - name: Build
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Scan the tree
+        run: docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE" dir /repo --redact --no-banner
+      - name: Scan the new commits
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git config --global --add safe.directory "$PWD"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            opts="$HEAD_SHA"
+          else
+            opts="$BASE..$HEAD_SHA"
+          fi
+          docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE" git /repo --redact --no-banner --log-opts="$opts"
+
+  provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Test the checker
+        run: |
+          pip install pytest
+          git config --global user.name ci
+          git config --global user.email ci@example.com
+          python -m pytest -q -p no:cacheprovider tools/tests
+      - name: Check tracked files and the new commits
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            python tools/check_provenance.py --range "$HEAD_SHA"
+          else
+            python tools/check_provenance.py --range "$BASE..$HEAD_SHA"
+          fi

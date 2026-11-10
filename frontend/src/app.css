@@ -1,0 +1,193 @@
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+
+/* Themes. A skin (watchtower = the default, matching Watchtower's own look; classic = the hub's first look) and a
+   mode (light or dark) are set on <html data-skin data-theme> before first paint (app.html) from the person's
+   saved choice. Everything below draws from these tokens. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme inline {
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+  --color-brand-50: color-mix(in srgb, var(--accent) 8%, transparent);
+  --color-brand-100: color-mix(in srgb, var(--accent) 15%, transparent);
+  --color-brand-400: color-mix(in srgb, var(--accent) 75%, white);
+  --color-brand-500: var(--accent);
+  --color-brand-600: var(--accent);
+  --color-brand-700: var(--accent-hover);
+}
+
+:root, [data-skin="watchtower"] {
+  --font-ui: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-code: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --bg: #f0f0f0; --panel: #ffffff; --panel-2: #f5f5f5; --line: #e0e0e0; --line-soft: #f0f0f0;
+  --text: #333333; --muted: #666666;
+  --accent: #3b82f6; --accent-hover: #2563eb; --accent-text: #ffffff;
+  --ok: #10b981; --warn: #f59e0b; --bad: #ef4444; --info: #3b82f6;
+  --ok-bg: rgba(16,185,129,.1); --warn-bg: rgba(245,158,11,.1); --bad-bg: rgba(239,68,68,.1); --info-bg: rgba(59,130,246,.1);
+  --header-bg: #f5f5f5; --tab-bg: #e8e8e8; --tab-active: #ffffff; --table-head: #f5f5f5; --row-hover: #f8f8f8;
+  --radius: 8px; --radius-ctl: 6px; --shadow: 0 1px 3px rgba(0,0,0,.08);
+  --brand-gradient: linear-gradient(180deg, #1a2332 0%, #4a5d75 100%);
+}
+[data-skin="watchtower"][data-theme="dark"] {
+  --bg: #1e1e1e; --panel: #333333; --panel-2: #3f3f3f; --line: #444444; --line-soft: #3a3a3a;
+  --text: #ffffff; --muted: #b0b0b0;
+  --accent: #38bdf8; --accent-hover: #0ea5e9; --accent-text: #0b1720;
+  --ok: #34d399; --warn: #fbbf24; --bad: #f87171; --info: #60a5fa;
+  --ok-bg: rgba(52,211,153,.15); --warn-bg: rgba(251,191,36,.15); --bad-bg: rgba(248,113,113,.15); --info-bg: rgba(96,165,250,.15);
+  --header-bg: #3f3f3f; --tab-bg: #525252; --tab-active: #2a2a2a; --table-head: #3f3f3f; --row-hover: #3a3a3a;
+  --shadow: 0 1px 3px rgba(0,0,0,.4);
+  --brand-gradient: linear-gradient(180deg, #ffffff 0%, #9bb0c8 100%);
+}
+[data-skin="classic"] {
+  --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --bg: #f6f5f3; --panel: #ffffff; --panel-2: #f1efec; --line: #e4e1dc; --line-soft: #efece8;
+  --text: #1c1917; --muted: #78716c;
+  --accent: #ea580c; --accent-hover: #c2410c; --accent-text: #ffffff;
+  --ok: #15803d; --warn: #b45309; --bad: #b91c1c; --info: #2563eb;
+  --ok-bg: var(--panel-2); --warn-bg: var(--panel-2); --bad-bg: var(--panel-2); --info-bg: var(--panel-2);
+  --header-bg: #ffffff; --tab-bg: transparent; --tab-active: transparent; --table-head: transparent; --row-hover: transparent;
+  --radius: 14px; --radius-ctl: 10px; --shadow: none;
+}
+[data-skin="classic"][data-theme="dark"] {
+  --bg: #0f0e0d; --panel: #1a1816; --panel-2: #24211e; --line: #34302b; --line-soft: #2a2622;
+  --text: #f5f3f0; --muted: #a8a29e;
+  --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+  --header-bg: #1a1816;
+}
+
+/* OpenPrintHQ: deep navy surfaces, violet primary, amber accent, Inter + JetBrains Mono, soft glow behind the page.
+   Dark is its home look; light uses OpenPrintHQ's own light palette. */
+[data-skin="openprinthq"] {
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-code: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --bg: #0d1117; --panel: #151b24; --panel-2: #1b2330; --line: #26303f; --line-soft: #1e2733;
+  --text: #e6ebf2; --muted: #7f8ca1;
+  --accent: #7c6cff; --accent-hover: #9a8cff; --accent-text: #ffffff; --accent-2: #ffb020;
+  --ok: #35c46b; --warn: #f5a623; --bad: #ff5c6c; --info: #38bdf8;
+  --ok-bg: color-mix(in srgb, #35c46b 10%, transparent); --warn-bg: color-mix(in srgb, #f5a623 10%, transparent);
+  --bad-bg: color-mix(in srgb, #ff5c6c 10%, transparent); --info-bg: color-mix(in srgb, #38bdf8 10%, transparent);
+  --header-bg: rgba(13, 17, 23, .72); --tab-bg: transparent; --tab-active: rgba(124, 108, 255, .14); --table-head: #1b2330; --row-hover: #1b2330;
+  --radius: 12px; --radius-ctl: 8px; --shadow: 0 10px 30px -12px rgba(0, 0, 0, .6);
+  --glow-1: rgba(124, 108, 255, .10); --glow-2: rgba(255, 176, 32, .05); --primary-dim: rgba(124, 108, 255, .14);
+}
+[data-skin="openprinthq"][data-theme="light"] {
+  --bg: #e9ebef; --panel: #f5f6f9; --panel-2: #e9ecf1; --line: #b7bcc6; --line-soft: #dde1e8;
+  --text: #14171b; --muted: #383d45;
+  --accent: #6d5cf0; --accent-hover: #5646d6; --accent-2: #b06f00;
+  --ok: #1f9d57; --warn: #b5730a; --bad: #d63a4a; --info: #1f7fb8;
+  --header-bg: rgba(240, 242, 245, .72); --tab-active: rgba(109, 92, 240, .14); --table-head: #e9ecf1; --row-hover: #e9ecf1;
+  --shadow: 0 10px 30px -14px rgba(0, 0, 0, .35);
+  --glow-1: rgba(109, 92, 240, .12); --glow-2: rgba(176, 111, 0, .07); --primary-dim: rgba(109, 92, 240, .14);
+}
+
+@layer components {
+html, body { background: var(--bg); color: var(--text); }
+body { font-family: var(--font-ui); -webkit-font-smoothing: antialiased; transition: background-color .2s, color .2s; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.muted { color: var(--muted); }
+.line { border-color: var(--line); }
+
+/* status chips: Watchtower's tinted pills */
+.chip { display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .6rem; border-radius: 999px;
+  font-size: .72rem; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); white-space: nowrap; color: var(--text); }
+.chip.ok { color: var(--ok); background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+.chip.warn { color: var(--warn); background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.chip.bad { color: var(--bad); background: var(--bad-bg); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.chip.live { background: var(--ok); color: #fff; border-color: var(--ok); }
+
+/* buttons: Watchtower's wt-btn (secondary by default, .primary filled with the accent) */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; padding: 8px 14px; border-radius: var(--radius-ctl);
+  font-weight: 600; font-size: .85rem; line-height: 1.1; border: 1px solid var(--line); background: transparent; color: var(--text);
+  cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, transform .15s, opacity .15s; text-decoration: none; }
+.btn:hover { background: var(--panel-2); border-color: var(--muted); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); }
+.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.btn.danger:hover { background: var(--bad-bg); border-color: var(--bad); }
+.btn.sm { padding: 5px 10px; font-size: .8rem; min-height: 28px; }
+[data-skin="classic"] .btn { background: var(--panel); }
+[data-skin="classic"] .btn.primary { background: var(--accent); }
+
+.input, select.input, textarea.input { width: 100%; padding: .5rem .7rem; border-radius: var(--radius-ctl); border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); font-size: .9rem; font-family: inherit; }
+.input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.input:disabled { opacity: .6; }
+label.lbl { display: block; font-size: .72rem; font-weight: 600; color: var(--muted); margin-bottom: .25rem; text-transform: uppercase; letter-spacing: .05em; }
+
+/* tables: Watchtower's wt-table */
+table.grid { display: table !important; width: 100%; border-collapse: collapse; font-size: .875rem; }   /* beats the Tailwind .grid utility */
+table.grid th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+  font-weight: 600; padding: .65rem .75rem; border-bottom: 1px solid var(--line); background: var(--table-head); white-space: nowrap; }
+table.grid td { padding: .6rem .75rem; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+table.grid tbody tr { transition: background-color .15s; }
+table.grid tbody tr:hover { background: var(--row-hover); }
+.panel > table.grid:first-child th:first-child, .panel .scroll-x > table.grid th:first-child { border-top-left-radius: 0; }
+
+.swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,.2); display: inline-block; flex: none; }
+.scroll-x { overflow-x: auto; scrollbar-width: thin; }
+.toggle { position: relative; width: 46px; height: 26px; border-radius: 999px; background: var(--line); cursor: pointer; transition: background .15s; flex: none; }
+.toggle.on { background: var(--ok); }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff;
+  transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.toggle.on::after { transform: translateX(20px); }
+.toggle.busy { opacity: .6; }
+
+/* Watchtower-style top bar: centred wordmark, rounded tabs */
+.wt-top { position: sticky; top: 0; z-index: 40; background: var(--header-bg); box-shadow: 0 1px 0 var(--line); }
+.wt-header { display: flex; align-items: center; gap: .5rem; padding: 6px 12px; min-height: 44px; }
+.wt-brand { display: inline-flex; align-items: center; gap: .55rem; line-height: 1; text-decoration: none; }
+.wt-brand img { width: 1.4rem; height: 1.4rem; }
+.wt-brand-title { font-family: "Bahnschrift", "DIN Alternate", "DIN Condensed", "Oswald", "Arial Narrow", sans-serif; font-stretch: condensed;
+  font-size: 1.3rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; background: var(--brand-gradient);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
+.wt-brand-tag { align-self: flex-start; transform: translateY(-.15rem); padding: .15em .6em; border: 1px solid var(--accent); border-radius: 999px;
+  color: var(--accent); font-size: .6rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.wt-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); cursor: pointer; transition: background .2s; }
+.wt-icon-btn:hover { background: color-mix(in srgb, var(--text) 15%, transparent); }
+.wt-tabs { display: flex; gap: 1px; overflow-x: auto; padding: 0 12px; scrollbar-width: none; }
+.wt-tabs::-webkit-scrollbar { display: none; }
+.wt-tab { display: inline-flex; align-items: center; gap: .4rem; padding: 8px 16px; border-radius: 8px 8px 0 0; background: var(--tab-bg);
+  color: var(--text); font-size: .875rem; white-space: nowrap; text-decoration: none; transition: background .15s; }
+.wt-tab:hover { background: color-mix(in srgb, var(--tab-bg) 70%, var(--tab-active)); }
+.wt-tab.active { background: var(--bg); font-weight: 700; }
+.wt-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; color: #fff; background: #dc3545; }
+.wt-badge.warn { background: #ffc107; color: #212529; }
+.wt-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 230px; z-index: 50; padding: .4rem; }
+.wt-menu a, .wt-menu button.item { display: block; width: 100%; text-align: left; padding: .45rem .6rem; border-radius: 6px; font-size: .875rem; }
+.wt-menu a:hover, .wt-menu button.item:hover { background: var(--panel-2); }
+
+/* OpenPrintHQ skin details */
+[data-skin="openprinthq"] body { line-height: 1.5; }
+[data-skin="openprinthq"] body::before { content: ""; position: fixed; inset: 0; z-index: -1; background-color: var(--bg);
+  background-image: radial-gradient(1200px 700px at 80% -10%, var(--glow-1), transparent 60%),
+                    radial-gradient(900px 500px at 0% 100%, var(--glow-2), transparent 60%); }
+html[data-skin="openprinthq"], [data-skin="openprinthq"] body { background: transparent; }
+[data-skin="openprinthq"] .panel { background: linear-gradient(180deg, var(--panel), var(--panel-2)); }
+[data-skin="openprinthq"] .btn { border-radius: var(--radius-ctl); }
+[data-skin="openprinthq"] .btn.primary { box-shadow: 0 6px 20px -8px var(--accent); }
+[data-skin="openprinthq"] .btn:not(.primary):hover { border-color: var(--accent); color: var(--accent-hover); background: transparent; }
+[data-skin="openprinthq"] .input { background: var(--bg); }
+[data-skin="openprinthq"] .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--primary-dim); }
+[data-skin="openprinthq"] h1 { letter-spacing: -.02em; }
+[data-skin="openprinthq"] .ophq-side { background: var(--header-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+[data-skin="openprinthq"] .ophq-side nav a.navlink.active { background: var(--primary-dim); color: var(--accent-hover); box-shadow: inset 2px 0 0 var(--accent); }
+[data-skin="openprinthq"] .ophq-side nav a.navlink:not(.active):hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.ophq-wm { font-weight: 700; letter-spacing: -.02em; }
+.ophq-wm b { color: var(--accent-hover); font-weight: 800; }
+[data-skin="openprinthq"] table.grid td, [data-skin="openprinthq"] .font-mono { font-variant-numeric: tabular-nums; }
+}

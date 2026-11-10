@@ -1,0 +1,127 @@
+{
+ "data": {
+  "print": {
+   "id": "3161",
+   "name": "3D BENCHY",
+   "slug": "3d-benchy",
+   "summary": "Author: CreativeTools\r\n3DBenchy is a 3D model specifically designed for testing and benchmarking 3D printers.",
+   "description": "<h3>Update: <a href=\"https://www.nti-group.com/home/information/news/3dbenchy/\">The Iconic 3DBenchy Enters the Public Domain</a></h3><p><br><br>Author: CreativeTools</p><p>3DBenchy is a 3D model specifically designed for testing and benchmarking 3D printers. It is a small recognizable object that you can download for free, make and share.</p><p><a href=\"http://www.3dbenchy.com/\">http://www.3dbenchy.com/</a></p><h3>Print instructions</h3><p>Maybe you have seen on some prints the infamous Benchy hull line. We eliminated that in our presliced gcode. Check the article, how we did that.<br><a href=\"https://help.prusa3d.com/en/article/the-benchy-hull-line_124745\">The Benchy hull line</a></p>",
+   "datePublished": "2025-02-14T09:26:10+00:00",
+   "printDuration": "2.46",
+   "weight": "29.00",
+   "numPieces": 4,
+   "nozzleDiameters": [
+    "0.40"
+   ],
+   "layerHeights": [
+    "0.15",
+    "0.28",
+    "0.25"
+   ],
+   "mmu": false,
+   "premium": false,
+   "price": null,
+   "filesType": "GCODE",
+   "likesCount": 22853,
+   "downloadCount": 594353,
+   "makesCount": 9120,
+   "license": {
+    "id": "7",
+    "name": "Creative Commons \u2014 Public Domain",
+    "abbreviation": "CC0",
+    "content": "<a rel=\"license\" target=\"_blank\" href=\"https://creativecommons.org/publicdomain/zero/1.0/\"><img alt=\"Creative Commons License\" style=\"border-width:0\" src=\"https://licensebuttons.net/p/zero/1.0/88x31.png\" align=\"right\"/></a>\r\n<br>\r\nThis work is licensed under a \r\n</br>\r\n <a rel=\"license\" target=\"_blank\" href=\"https://creativecommons.org/publicdomain/zero/1.0/\">Creative Commons (International License)<br><h6>Public Domain</h6></a>\r\n<hr>\r\n<div><span style=\"color:#5daf0b; font-weight:bold;\">\u2714 </span> | Sharing without ATTRIBUTION  </div>\r\n<div><span style=\"color:#5daf0b; font-weight:bold;\">\u2714 </span> | Remix Culture allowed  </div>\r\n<div><span style=\"color:#5daf0b; font-weight:bold;\">\u2714 </span> | Commercial Use  </div>\r\n<div><span style=\"color:#5daf0b; font-weight:bold;\">\u2714 </span> | Free Cultural Works  </div>\r\n<div><span style=\"color:#5daf0b; font-weight:bold;\">\u2714 </span> | Meets Open Definition  </div>"
+   },
+   "user": {
+    "id": "16",
+    "publicUsername": "Prusa Research",
+    "handle": "Prusa3D"
+   },
+   "category": {
+    "id": "12",
+    "path": [
+     {
+      "name": "3D Printers"
+     },
+     {
+      "name": "Test Models"
+     }
+    ]
+   },
+   "tags": [
+    {
+     "name": "boat"
+    },
+    {
+     "name": "test"
+    },
+    {
+     "name": "benchy"
+    },
+    {
+     "name": "testmodel"
+    }
+   ],
+   "images": [
+    {
+     "filePath": "media/prints/3161/images/20206_70fde6a0-6da1-4522-ba46-25f1bece7199/benchy.jpg"
+    },
+    {
+     "filePath": "media/prints/3161/images/20205_d6fc9f43-aa8d-466d-8f44-e0d20fe84f01/benchy-02.jpg"
+    }
+   ],
+   "materials": [
+    {
+     "name": "PLA"
+    }
+   ],
+   "printer": {
+    "name": "Prusa MK3/S/S+"
+   },
+   "stls": [
+    {
+     "id": "49068",
+     "name": "3dbenchy.stl",
+     "fileSize": 11285384
+    }
+   ],
+   "gcodes": [
+    {
+     "id": "240956",
+     "name": "BonkersBenchy_PLA_8m.bgcode",
+     "fileSize": 546849
+    },
+    {
+     "id": "240957",
+     "name": "BenchyRules_PLA_14m.bgcode",
+     "fileSize": 1198713
+    },
+    {
+     "id": "13745",
+     "name": "3dbenchy_015mm_pla_mk3_2h.gcode",
+     "fileSize": 6726610
+    },
+    {
+     "id": "60999",
+     "name": "3DBenchy_150um_MINI_PLA_2h.gcode",
+     "fileSize": 4593837
+    }
+   ],
+   "slas": [],
+   "otherFiles": [],
+   "downloadPacks": [
+    {
+     "id": "7763318",
+     "name": "",
+     "fileType": "MODEL_FILES",
+     "fileSize": 4807370
+    },
+    {
+     "id": "7768534",
+     "name": "",
+     "fileType": "PRINT_FILES",
+     "fileSize": 4425988
+    }
+   ]
+  }
+ }
+}

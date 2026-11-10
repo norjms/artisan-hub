@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+test.db
+node_modules/
+frontend/build/
+frontend/.svelte-kit/
+.env
+*.env
+compose.yml
+compose.override.yml

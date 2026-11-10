@@ -1,0 +1,17 @@
+# Keep the build context to what the Dockerfile copies (frontend/, backend/requirements.txt, backend/app).
+.git
+**/node_modules
+frontend/build
+frontend/.svelte-kit
+**/__pycache__
+**/.pytest_cache
+backend/tests
+**/test.db
+docs
+tools
+woocommerce
+.github
+compose*.yml
+*.md
+*.env
+.env

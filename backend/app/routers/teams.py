@@ -1,0 +1,530 @@
+"""Teams: switching, members and roles, invites, connected services, and the platform admin view."""
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..auth import Principal, need, signed_in_user
+from ..config import settings
+from ..db import get_db
+from ..jobs import event
+from ..models import Connection, Invite, Membership, PERMS, ROLE_PERMS, ROLES, Team, User
+from ..services import connections as conns, teams as tsvc
+from ..tenant import bind_session, set_team
+
+router = APIRouter(prefix="/api")
+
+
+def _iso(d):
+    return d.isoformat() if d else None
+
+
+def _member_view(m: Membership, u: User) -> dict:
+    return {"user_id": u.id, "name": u.label, "email": u.email, "username": u.username, "role": m.role,
+            "perms": m.effective_perms, "custom": m.perms is not None and m.role != "owner",
+            "joined_at": _iso(m.created_at), "last_login_at": _iso(u.last_login_at)}
+
+
+def _owners_left(db: Session, team_id: int, excluding: int | None = None) -> int:
+    q = select(func.count()).select_from(Membership).where(Membership.team_id == team_id, Membership.role == "owner")
+    if excluding:
+        q = q.where(Membership.user_id != excluding)
+    return db.execute(q).scalar()
+
+
+def _invite_view(i: Invite) -> dict:
+    now = datetime.now(timezone.utc)
+    exp = i.expires_at if i.expires_at.tzinfo else i.expires_at.replace(tzinfo=timezone.utc)
+    return {"id": i.id, "email": i.email, "name": i.name, "kind": i.kind, "team_id": i.team_id,
+            "team": tsvc.invite_target(i), "role": i.role, "perms": i.perms, "needs_account": bool(i.ak_url),
+            "created_at": _iso(i.created_at), "expires_at": _iso(i.expires_at), "expired": exp < now}
+
+
+def _send_invite(db: Session, inv: Invite, raw: str, by: User | None) -> dict:
+    """Arrange the Authentik login, then return the hub link (and email it when SMTP is set up)."""
+    try:
+        login = tsvc.provision_login(inv)
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(502, f"could not set up their sign-in in Authentik: {getattr(e, 'message', e)}")
+    db.commit()
+    link = f"{settings().public_url}/invite/{raw}"
+    target = tsvc.invite_target(inv)
+    mailed = False
+    if settings().smtp_host:
+        try:
+            from ..tasks import send_mail
+            steps = (f"1. Create your Artisan Hub login: {login['signup_url']}\n2. Then accept: {link}\n"
+                     if login.get("signup_url") else f"Accept: {link}\n")
+            send_mail(f"You're invited to {target} on Artisan Hub",
+                      f"{by.label if by else 'The Artisan Hub owner'} invited you to {target}"
+                      f"{' as ' + inv.role if inv.kind == 'join' else ''}.\n\n{steps}\n"
+                      f"Use the email address this was sent to. The links work for 14 days.", to=[inv.email],
+                      reply_to=by.email if by and by.email else None)
+            mailed = True
+        except Exception:  # noqa: BLE001
+            mailed = False
+    return {"link": link, "emailed": mailed, "account": login["account"], "signup_url": login.get("signup_url"),
+            "note": login.get("note"), "invite": _invite_view(inv)}
+
+
+def _check_grant(p: Principal, role: str, perms: list[str] | None) -> list[str] | None:
+    """Nobody hands out more than they hold; only owners make owners."""
+    if role not in ROLES:
+        raise HTTPException(400, "unknown role")
+    if role == "owner" and p.get("role") != "owner":
+        raise HTTPException(403, "only an owner can make someone an owner")
+    mine = list(p.get("perms") or [])
+    over = [x for x in ROLE_PERMS[role] if x not in mine] if perms is None else []
+    if over:
+        raise HTTPException(403, f"you can't give the {role} role: it includes {', '.join(over)}, which you don't have")
+    try:
+        return tsvc.clean_perms(perms, role, mine)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+
+
+# ---------- switching ----------
+
+class SwitchIn(BaseModel):
+    team: str | int
+
+
+@router.post("/me/team")
+def switch_team(body: SwitchIn, request: Request, db: Session = Depends(get_db), user: User = Depends(signed_in_user)):
+    if user is None:
+        raise HTTPException(400, "not available in dev mode")
+    picked = tsvc.pick_team(db, user, body.team, None)
+    if not picked:
+        raise HTTPException(403, "you are not a member of that team")
+    team, m = picked
+    request.session["team_id"] = team.id
+    user.last_team_id = team.id
+    db.commit()
+    return {"team": {"id": team.id, "slug": team.slug, "name": team.name, "role": m.role}}
+
+
+class TeamIn(BaseModel):
+    name: str
+
+
+# ---------- current team ----------
+
+@router.get("/team")
+def team_info(db: Session = Depends(get_db), p: Principal = Depends(need("read"))):
+    t = db.get(Team, p.team_id)
+    rows = db.execute(select(Membership, User).join(User, User.id == Membership.user_id)
+                      .where(Membership.team_id == t.id).order_by(Membership.role.desc(), User.name)).all()
+    out = {"id": t.id, "slug": t.slug, "name": t.name, "personal": t.personal, "role": p.get("role"),
+           "my_perms": p.get("perms") or [], "perm_catalog": PERMS, "role_perms": ROLE_PERMS,
+           "members": [_member_view(m, u) for m, u in rows]}
+    if "invite" in (p.get("perms") or []):
+        invs = db.execute(select(Invite).where(Invite.team_id == t.id, Invite.kind == "join", Invite.accepted_at.is_(None),
+                                               Invite.revoked.is_(False)).order_by(Invite.id.desc())).scalars()
+        out["invites"] = [_invite_view(i) for i in invs]
+    return out
+
+
+@router.patch("/team")
+def rename_team(body: TeamIn, db: Session = Depends(get_db), p: Principal = Depends(need("team"))):
+    t = db.get(Team, p.team_id)
+    if not body.name.strip():
+        raise HTTPException(400, "name the team")
+    t.name = body.name.strip()[:120]
+    db.commit()
+    return {"id": t.id, "name": t.name}
+
+
+class MemberIn(BaseModel):
+    role: str | None = None
+    perms: list[str] | None = None
+    reset_perms: bool = False
+
+
+@router.patch("/team/members/{user_id}")
+def set_member(user_id: int, body: MemberIn, db: Session = Depends(get_db), p: Principal = Depends(need("people"))):
+    m = tsvc.membership(db, p.team_id, user_id)
+    if not m:
+        raise HTTPException(404)
+    if user_id == p.get("user_id"):
+        raise HTTPException(400, "you can't change your own role or permissions")
+    if m.role == "owner" and p.get("role") != "owner":
+        raise HTTPException(403, "only an owner can change an owner")
+    role = body.role or m.role
+    if m.role == "owner" and role != "owner" and not _owners_left(db, p.team_id, excluding=user_id):
+        raise HTTPException(400, "a team needs at least one owner")
+    perms = None if body.reset_perms else (body.perms if body.perms is not None else (m.perms if role == m.role else None))
+    perms = _check_grant(p, role, perms)
+    old = (m.role, m.effective_perms)
+    m.role, m.perms = role, perms
+    u = db.get(User, user_id)
+    if old[0] != role:
+        event(db, "team", f"{u.label}: role {old[0]} -> {role}", actor=p.actor)
+    if set(old[1]) != set(m.effective_perms):
+        added = [x for x in m.effective_perms if x not in old[1]]
+        dropped = [x for x in old[1] if x not in m.effective_perms]
+        event(db, "team", f"{u.label}: permissions" + (f" +{','.join(added)}" if added else "")
+              + (f" -{','.join(dropped)}" if dropped else ""), actor=p.actor)
+    db.commit()
+    return _member_view(m, u)
+
+
+@router.delete("/team/members/{user_id}")
+def remove_member(user_id: int, db: Session = Depends(get_db), p: Principal = Depends(need("people"))):
+    m = tsvc.membership(db, p.team_id, user_id)
+    if not m:
+        raise HTTPException(404)
+    if user_id == p.get("user_id"):
+        raise HTTPException(400, "use Leave team to remove yourself")
+    if m.role == "owner" and p.get("role") != "owner":
+        raise HTTPException(403, "only an owner can remove an owner")
+    if m.role == "owner" and not _owners_left(db, p.team_id, excluding=user_id):
+        raise HTTPException(400, "a team needs at least one owner")
+    u = db.get(User, user_id)
+    db.delete(m)
+    _revoke_access(db, p.team_id, user_id)
+    event(db, "team", f"Removed {u.label} from the team", actor=p.actor)
+    db.commit()
+    signout = tsvc.drop_hub_access_if_unused(db, u)
+    return {"ok": True, "hub_access_removed": signout}
+
+
+@router.post("/team/leave")
+def leave(db: Session = Depends(get_db), p: Principal = Depends(need("read"))):
+    uid = p.get("user_id")
+    m = tsvc.membership(db, p.team_id, uid) if uid else None
+    if not m:
+        raise HTTPException(400, "not a member")
+    if m.role == "owner" and not _owners_left(db, p.team_id, excluding=uid):
+        raise HTTPException(400, "make someone else an owner before you leave")
+    db.delete(m)
+    _revoke_access(db, p.team_id, uid)
+    db.commit()
+    tsvc.drop_hub_access_if_unused(db, db.get(User, uid))
+    return {"ok": True}
+
+
+def _revoke_access(db: Session, team_id: int, user_id: int):
+    """Someone leaving a team loses its API keys and connected apps right away."""
+    from sqlalchemy import update
+    from ..models import ApiKey, OAuthToken
+    db.execute(update(ApiKey).where(ApiKey.team_id == team_id, ApiKey.user_id == user_id).values(revoked=True))
+    db.execute(update(OAuthToken).where(OAuthToken.team_id == team_id, OAuthToken.user_id == user_id).values(revoked=True))
+
+
+# ---------- invites (to this team) ----------
+
+class InviteIn(BaseModel):
+    email: str
+    name: str | None = None
+    role: str = "member"
+    perms: list[str] | None = None
+
+
+@router.post("/team/invites")
+def invite(body: InviteIn, db: Session = Depends(get_db), p: Principal = Depends(need("invite"))):
+    perms = _check_grant(p, body.role, body.perms)
+    by = db.get(User, p["user_id"]) if p.get("user_id") else None
+    try:
+        raw, inv = tsvc.create_invite(db, p.team_id, body.email, body.role, by, name=body.name, perms=perms)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    event(db, "team", f"Invited {inv.email} as {body.role}", actor=p.actor)
+    return _send_invite(db, inv, raw, by)
+
+
+def _cancel(db: Session, inv: Invite):
+    inv.revoked = True
+    if inv.ak_invitation:
+        try:
+            from ..clients import authentik_api
+            ak = authentik_api.client()
+            if ak:
+                ak.delete_invitation(inv.ak_invitation)
+        except Exception:  # noqa: BLE001
+            pass
+    db.commit()
+
+
+@router.delete("/team/invites/{invite_id}")
+def revoke_invite(invite_id: int, db: Session = Depends(get_db), p: Principal = Depends(need("invite"))):
+    inv = db.get(Invite, invite_id)
+    if not inv or inv.team_id != p.team_id or inv.kind != "join":
+        raise HTTPException(404)
+    _cancel(db, inv)
+    return {"ok": True}
+
+
+# ---------- the invite link (works before sign-in) ----------
+
+async def _maybe_user(request: Request, db: Session = Depends(get_db)) -> User | None:
+    from starlette.concurrency import run_in_threadpool
+    uid = request.session.get("uid")
+    return await run_in_threadpool(db.get, User, uid) if uid else None
+
+
+@router.get("/invites/{token}")
+def invite_info(token: str, db: Session = Depends(get_db), user: User | None = Depends(_maybe_user)):
+    inv = tsvc.find_invite(db, token)
+    if not inv:
+        raise HTTPException(404, "this invite is no longer valid")
+    return {"team": tsvc.invite_target(inv), "kind": inv.kind, "role": inv.role, "email": inv.email,
+            "signup_url": inv.ak_url, "signed_in": bool(user),
+            "matches": bool(user and (user.email or "").lower() == inv.email.lower()),
+            "signed_in_as": user.email if user else None}
+
+
+@router.post("/invites/{token}/accept")
+def invite_accept(token: str, request: Request, db: Session = Depends(get_db), user: User = Depends(signed_in_user)):
+    if user is None:
+        raise HTTPException(400, "not available in dev mode")
+    inv = tsvc.find_invite(db, token)
+    if not inv:
+        raise HTTPException(404, "this invite is no longer valid")
+    try:
+        m = tsvc.accept_invite(db, inv, user)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    bind_session(db, inv.team_id)
+    event(db, "team", f"{user.label} joined as {m.role}", actor=user.username or user.email)
+    db.commit()
+    request.session["team_id"] = inv.team_id
+    return {"team": {"id": inv.team_id, "name": tsvc.invite_target(inv), "role": m.role}}
+
+
+# ---------- connected services ----------
+
+@router.get("/connections")
+def list_connections(db: Session = Depends(get_db), p: Principal = Depends(need("connections"))):
+    from ..services import vision
+    if vision.seed_from_legacy(db):
+        db.commit()
+    rows = {r.kind: r for r in db.execute(select(Connection)).scalars()}
+    return [conns.view(rows[k]) if k in rows else conns.empty_view(k) for k in conns.KINDS]
+
+
+class ConnIn(BaseModel):
+    config: dict | None = None
+    secrets: dict | None = None
+    enabled: bool | None = None
+
+
+@router.put("/connections/{kind}")
+def save_connection(kind: str, body: ConnIn, db: Session = Depends(get_db), p: Principal = Depends(need("connections"))):
+    if kind not in conns.KINDS:
+        raise HTTPException(404)
+    if body.config:
+        for f, v in body.config.items():
+            if f.endswith("url") and v and not str(v).startswith(("http://", "https://")):
+                raise HTTPException(400, f"{f} must start with http:// or https://")
+    try:
+        row = conns.save(db, kind, body.config, body.secrets, body.enabled)
+    except ValueError as e:
+        raise HTTPException(400, str(e)[:300])
+    event(db, "team", f"Updated connection: {conns.KINDS[kind][0]}", actor=p.actor)
+    db.commit()
+    return conns.view(row)
+
+
+@router.post("/connections/{kind}/test")
+def test_connection(kind: str, db: Session = Depends(get_db), p: Principal = Depends(need("connections"))):
+    if kind not in conns.KINDS:
+        raise HTTPException(404)
+    row = db.execute(select(Connection).where(Connection.kind == kind)).scalar()
+    if not row:
+        raise HTTPException(400, "save the connection first")
+    conns.forget(p.team_id, kind)
+    ok, msg = conns.test(kind)
+    row.last_test_ok, row.last_test_msg, row.last_test_at = ok, msg[:500], datetime.now(timezone.utc)
+    db.commit()
+    return conns.view(row)
+
+
+@router.post("/connections/{kind}/models")
+def connection_models(kind: str, body: ConnIn | None = None, db: Session = Depends(get_db),
+                      p: Principal = Depends(need("connections"))):
+    """The models an AI connection offers, using what is typed in the form over what is saved."""
+    import httpx
+
+    from ..services import vision
+    if kind not in vision.KINDS:
+        raise HTTPException(404)
+    saved = conns.get(kind, required=False) or {}
+    row = db.execute(select(Connection).where(Connection.kind == kind)).scalar()
+    if row and not saved:           # saved but paused: still list with its values
+        saved = {**(row.config or {}), **conns.decrypt(row.secrets_enc)}
+    cfg = {**saved, **{k: v for k, v in ((body.config if body else None) or {}).items() if v not in (None, "")},
+           **{k: v for k, v in ((body.secrets if body else None) or {}).items() if v}}
+    try:
+        return {"models": vision.models(kind, cfg)}
+    except vision.ProviderError as e:
+        raise HTTPException(400, str(e)[:300])
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"could not reach it: {type(e).__name__}")
+
+
+class AiOrderIn(BaseModel):
+    order: list[str]
+
+
+def _ai_order_view(db: Session) -> dict:
+    from ..services import vision
+    rows = {r.kind: r for r in db.execute(select(Connection)).scalars()}
+    out = []
+    for k in vision.order(db):
+        r = rows.get(k)
+        out.append({"kind": k, "label": conns.KINDS[k][0], "connected": bool(r), "enabled": bool(r and r.enabled),
+                    "model": (r.config or {}).get("model") if r else None,
+                    "last_test_ok": r.last_test_ok if r else None})
+    return {"order": out}
+
+
+@router.get("/ai/order")
+def ai_order(db: Session = Depends(get_db), p: Principal = Depends(need("connections"))):
+    from ..services import vision
+    if vision.seed_from_legacy(db):
+        db.commit()
+    return _ai_order_view(db)
+
+
+@router.put("/ai/order")
+def ai_order_put(body: AiOrderIn, db: Session = Depends(get_db), p: Principal = Depends(need("connections"))):
+    from ..services import vision
+    vision.save_order(db, body.order)
+    event(db, "team", "Changed the label-reading AI order", actor=p.actor)
+    db.commit()
+    return _ai_order_view(db)
+
+
+@router.delete("/connections/{kind}")
+def delete_connection(kind: str, db: Session = Depends(get_db), p: Principal = Depends(need("connections"))):
+    row = db.execute(select(Connection).where(Connection.kind == kind)).scalar()
+    if row:
+        db.delete(row)
+        event(db, "team", f"Removed connection: {conns.KINDS.get(kind, (kind,))[0]}", actor=p.actor)
+        db.commit()
+        conns.forget(p.team_id, kind)
+    return {"ok": True}
+
+
+# ---------- platform admins ----------
+
+@router.get("/platform/teams")
+def platform_teams(db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
+    bind_session(db, None, True)
+    counts = dict(db.execute(select(Membership.team_id, func.count()).group_by(Membership.team_id)).all())
+    from ..models import Model
+    models = dict(db.execute(select(Model.team_id, func.count()).group_by(Model.team_id)).all())
+    out = [{"id": t.id, "slug": t.slug, "name": t.name, "personal": t.personal, "members": counts.get(t.id, 0),
+            "models": models.get(t.id, 0), "source_dirs": t.source_dirs or {}, "storage_prefix": t.storage_prefix,
+            "created_at": _iso(t.created_at)} for t in db.execute(select(Team).order_by(Team.id)).scalars()]
+    bind_session(db, p.team_id)
+    return {"teams": out, "source_root": settings().source_root}
+
+
+class DirsIn(BaseModel):
+    source_dirs: dict
+
+
+@router.patch("/platform/teams/{team_id}")
+def platform_set_dirs(team_id: int, body: DirsIn, db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
+    from pathlib import Path
+    t = db.get(Team, team_id)
+    if not t:
+        raise HTTPException(404)
+    if not settings().source_root and any((body.source_dirs or {}).values()):
+        raise HTTPException(400, "this hub has no server folder (HUB_SOURCE_ROOT) to assign folders from")
+    root = Path(settings().source_root).resolve()
+    clean = {}
+    for k in ("deltaprints", "inbox"):
+        v = (body.source_dirs or {}).get(k)
+        if not v:
+            continue
+        rp = Path(v).resolve()
+        if rp != root and root not in rp.parents:
+            raise HTTPException(400, f"{k} must be inside {root}")
+        clean[k] = str(rp)
+    t.source_dirs = clean
+    db.commit()
+    return {"id": t.id, "source_dirs": t.source_dirs}
+
+
+@router.get("/platform/users")
+def platform_users(db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
+    rows = db.execute(select(User).order_by(User.id)).scalars()
+    return [{"id": u.id, "name": u.label, "email": u.email, "platform_admin": u.platform_admin,
+             "teams": [{"team_id": m.team_id, "role": m.role} for m in u.memberships],
+             "last_login_at": _iso(u.last_login_at)} for u in rows]
+
+
+# ---------- the hub owner adds people ----------
+
+class PersonIn(BaseModel):
+    email: str
+    name: str | None = None
+    mode: str                      # team (they own a new team) | individual (their own workspace) | join (an existing team)
+    team_name: str | None = None
+    team_id: int | None = None
+    role: str = "member"
+    perms: list[str] | None = None
+
+
+@router.post("/platform/people")
+def add_person(body: PersonIn, db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
+    by = db.get(User, p["user_id"]) if p.get("user_id") else None
+    kind = {"team": "new_team", "individual": "individual", "join": "join"}.get(body.mode)
+    if not kind:
+        raise HTTPException(400, "choose: as a team, as an individual, or into an existing team")
+    perms = None
+    if kind == "join":
+        if not body.team_id or not db.get(Team, body.team_id):
+            raise HTTPException(400, "pick a team")
+        if body.role not in ROLES:
+            raise HTTPException(400, "unknown role")
+        try:
+            perms = tsvc.clean_perms(body.perms, body.role, list(PERMS))
+        except PermissionError as e:
+            raise HTTPException(403, str(e))
+    try:
+        raw, inv = tsvc.create_invite(db, body.team_id if kind == "join" else None, body.email, body.role, by, kind=kind,
+                                      team_name=body.team_name, name=body.name, perms=perms)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return _send_invite(db, inv, raw, by)
+
+
+@router.get("/platform/invites")
+def platform_invites(db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
+    rows = db.execute(select(Invite).where(Invite.accepted_at.is_(None), Invite.revoked.is_(False))
+                      .order_by(Invite.id.desc())).scalars()
+    return [_invite_view(i) for i in rows]
+
+
+@router.delete("/platform/invites/{invite_id}")
+def platform_cancel_invite(invite_id: int, db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
+    inv = db.get(Invite, invite_id)
+    if not inv:
+        raise HTTPException(404)
+    _cancel(db, inv)
+    return {"ok": True}
+
+
+@router.post("/platform/users/{user_id}/remove")
+def platform_remove_person(user_id: int, db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
+    """Take someone out of every team and out of the hub-users group. Teams they alone own are kept, ownerless,
+    for the hub owner to hand over."""
+    u = db.get(User, user_id)
+    if not u:
+        raise HTTPException(404)
+    if u.id == p.get("user_id"):
+        raise HTTPException(400, "you can't remove yourself")
+    if u.platform_admin:
+        raise HTTPException(400, f"hub owners are managed in the sign-in provider ({settings().admin_group})")
+    for m in list(u.memberships):
+        _revoke_access(db, m.team_id, u.id)
+        db.delete(m)
+    db.commit()
+    removed = tsvc.drop_hub_access_if_unused(db, u)
+    return {"ok": True, "hub_access_removed": removed}

@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     authentik_token: str = ""
     authentik_group: str = "hub-users"
     authentik_invite_flow: str = "artisan-hub-invite"
+    # LLDAP, the user directory behind Authelia, for invites when there is no Authentik (an installation made by
+    # the ArtisanHub installer). The account must be in lldap_admin. Empty = off.
+    lldap_url: str = ""                          # its web API, for example http://lldap:17170
+    ldap_url: str = ""                           # its LDAP port, for example ldap://lldap:3890
+    ldap_base_dn: str = "dc=artisanhub,dc=local"
+    lldap_user: str = "hub"
+    lldap_password: str = ""
+    lldap_group: str = "hub-users"
+    oidc_logout_url: str = ""                   # where sign-out sends people; empty = the provider's end-session
 
     # WooCommerce
     woo_url: str = ""

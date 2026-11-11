@@ -1,4 +1,5 @@
-FROM node:22-alpine AS ui
+# The screens are the same on every platform, so they are built once, natively.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS ui
 WORKDIR /ui
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install --no-audit --no-fund

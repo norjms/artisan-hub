@@ -59,6 +59,10 @@ settings when it is no longer needed.
 | 429 | Too many attempts from this address; wait a minute |
 | 503 | The hub is still starting |
 
+## `POST /api/setup/v1/password-link`
+
+For a hub whose logins are in LLDAP (`HUB_LLDAP_URL`). Body `{"email": "..."}`; answers `{"link": ..., "expires_in_minutes": 30, "user": ...}`: a one-time link to the hub's page where the person with that login chooses its password. Only the API key that `initialize` minted may ask (403 otherwise), since the link sets the password of any login; 404 when no login has that email, 409 without LLDAP. The installer uses it for the owner's login, which it makes but whose password it never sees.
+
 ## Reachability checks
 
 Whether the hub can be reached through its public address, checked from wherever it matters (outside the

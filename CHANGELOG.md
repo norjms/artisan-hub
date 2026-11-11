@@ -9,4 +9,4 @@ Notable changes to Artisan Hub. Versions follow the tags of this repository.
   connects to nothing it was not told about.
 - `compose.example.yml` for self-hosting with Docker Compose.
 - First-run setup at `/setup` and through the setup API (`docs/setup-api.md`).
-- The image is published to GitHub Container Registry by CI on GitHub-hosted runners.
+- The image is published to GitHub Container Registry for amd64 and arm64 by the maintainer.

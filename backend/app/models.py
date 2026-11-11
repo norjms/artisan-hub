@@ -531,6 +531,7 @@ class Installation(Base):
     farm_source: Mapped[str | None] = mapped_column(String(20))        # setup | migrated | legacy
     setup_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     setup_token_hash: Mapped[str | None] = mapped_column(String(64))   # a generated first-run token, until setup completes
+    installer_key_id: Mapped[int | None] = mapped_column(Integer)      # the API key setup minted (password links)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -615,6 +616,19 @@ class Membership(Base):
             return [p for p in PERMS if p in self.perms or p == "view"]
         return list(ROLE_PERMS.get(self.role, ["view"]))
     user: Mapped[User] = relationship(back_populates="memberships")
+
+
+class PasswordLink(Base):
+    """A one-time link to the hub's page where a person chooses the password of their LLDAP login: someone
+    invited who had no login, or the hub's owner after the installer made theirs. Only the hash is kept."""
+    __tablename__ = "password_link"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    uid: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(320))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Invite(Base):

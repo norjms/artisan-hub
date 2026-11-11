@@ -45,7 +45,7 @@ def _invite_view(i: Invite) -> dict:
 def _send_invite(db: Session, inv: Invite, raw: str, by: User | None) -> dict:
     """Arrange the Authentik login, then return the hub link (and email it when SMTP is set up)."""
     try:
-        login = tsvc.provision_login(inv)
+        login = tsvc.provision_login(inv, db)
     except Exception as e:  # noqa: BLE001
         db.rollback()
         raise HTTPException(502, f"could not set up their sign-in in Authentik: {getattr(e, 'message', e)}")
@@ -237,7 +237,22 @@ def invite(body: InviteIn, db: Session = Depends(get_db), p: Principal = Depends
 
 def _cancel(db: Session, inv: Invite):
     inv.revoked = True
-    if inv.ak_invitation:
+    if inv.ak_invitation and inv.ak_invitation.startswith("lldap:"):
+        # The login made for them is removed again, unless they had already chosen its password.
+        from ..models import PasswordLink
+        uid = inv.ak_invitation.split(":", 1)[1]
+        links = db.execute(select(PasswordLink).where(PasswordLink.uid == uid)).scalars().all()
+        try:
+            from ..clients import lldap_api
+            ld = lldap_api.client()
+            if ld and not any(link.used_at for link in links):
+                ld.delete_user(uid)
+        except Exception:  # noqa: BLE001
+            pass
+        for link in links:
+            if not link.used_at:
+                db.delete(link)
+    elif inv.ak_invitation:
         try:
             from ..clients import authentik_api
             ak = authentik_api.client()

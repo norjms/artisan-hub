@@ -121,6 +121,8 @@ MIGRATIONS: list[tuple[int, str]] = [
     # sliced files chosen by hand for a printer, and slices locked against re-slicing
     (20, "ALTER TABLE slice_result ADD COLUMN IF NOT EXISTS locked boolean DEFAULT false; "
          "ALTER TABLE slice_result ADD COLUMN IF NOT EXISTS source varchar(12)"),
+    # password links (password_link is a new table, create_all) and the key setup minted
+    (21, "ALTER TABLE installation ADD COLUMN IF NOT EXISTS installer_key_id integer"),
 ]
 
 

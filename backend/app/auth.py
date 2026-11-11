@@ -106,6 +106,8 @@ def _login_user(info: dict, groups: list[str]) -> int:
 @router.get("/auth/logout")
 async def logout(request: Request):
     request.session.clear()
+    if settings().oidc_logout_url:
+        return RedirectResponse(settings().oidc_logout_url)
     return RedirectResponse(settings().oidc_issuer.rstrip("/") + "/end-session/")
 
 

@@ -174,10 +174,44 @@ def create_invite(db: Session, team_id: int | None, email: str, role: str, by: U
     return raw, inv
 
 
-def provision_login(inv: Invite) -> dict:
-    """Make sure the person can sign in: an existing Authentik account joins the hub-users group; otherwise an
-    Authentik invitation lets them create one. Returns {"account": "existing"|"invited"|"manual", ...}."""
-    from ..clients import authentik_api
+def new_password_link(db: Session, uid: str, email: str, ttl: timedelta) -> str:
+    """A one-time link to the hub's page where this LLDAP login's owner chooses its password."""
+    from ..models import PasswordLink
+    raw = secrets.token_urlsafe(32)
+    db.add(PasswordLink(token_hash=_h(raw), uid=uid, email=email.strip().lower(), expires_at=_now() + ttl))
+    db.flush()
+    return f"{settings().public_url}/account/password/{raw}"
+
+
+def find_password_link(db: Session, raw: str):
+    from ..models import PasswordLink
+    row = db.execute(select(PasswordLink).where(PasswordLink.token_hash == _h(raw or ""))).scalar()
+    if not row or row.used_at:
+        return None
+    exp = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
+    return row if exp > _now() else None
+
+
+def _provision_lldap(db: Session, inv: Invite, ld) -> dict:
+    u = ld.user_by_email(inv.email)
+    if u:
+        ld.add_to_group(u["id"])
+        return {"account": "existing"}
+    uid = ld.create_user(inv.email, inv.name)
+    ld.add_to_group(uid)
+    url = new_password_link(db, uid, inv.email, INVITE_TTL)
+    inv.ak_invitation, inv.ak_url = f"lldap:{uid}", url
+    return {"account": "invited", "signup_url": url}
+
+
+def provision_login(inv: Invite, db: Session | None = None) -> dict:
+    """Make sure the person can sign in: an existing account joins the hub-users group; otherwise they get a
+    login to finish. With Authentik, an Authentik invitation; with LLDAP, a login the hub makes and a one-time
+    link to choose its password. Returns {"account": "existing"|"invited"|"manual", ...}."""
+    from ..clients import authentik_api, lldap_api
+    ld = lldap_api.client()
+    if ld and db is not None:
+        return _provision_lldap(db, inv, ld)
     ak = authentik_api.client()
     if not ak:
         return {"account": "manual", "note": "Authentik is not connected; add them to the hub-users group by hand."}
@@ -247,7 +281,17 @@ def drop_hub_access_if_unused(db: Session, user: User):
     left = db.execute(select(func.count()).select_from(Membership).where(Membership.user_id == user.id)).scalar()
     if left or user.platform_admin or not user.email:
         return False
-    from ..clients import authentik_api
+    from ..clients import authentik_api, lldap_api
+    ld = lldap_api.client()
+    if ld:
+        try:
+            u = ld.user_by_email(user.email)
+            if u:
+                ld.remove_from_group(u["id"])
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        return False
     ak = authentik_api.client()
     if not ak:
         return False

@@ -9,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import settings
 from .db import init_db
 from . import auth
-from .routers import catalog, ops, sourcing, slicing, mcp, oauth, teams, farm, quotes, plugin, mobile, mobile_control, phone_pages, plates, manual_orders, clipper, setup
+from .routers import account, catalog, ops, sourcing, slicing, mcp, oauth, teams, farm, quotes, plugin, mobile, mobile_control, phone_pages, plates, manual_orders, clipper, setup
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -17,6 +17,7 @@ app = FastAPI(title="Artisan Hub", version="1.0.0", docs_url="/api/docs", openap
 app.add_middleware(SessionMiddleware, secret_key=settings().session_secret, session_cookie="ahub",
                    max_age=60 * 60 * 24 * 14, same_site="lax", https_only=settings().public_url.startswith("https"))
 app.include_router(auth.router)
+app.include_router(account.router)       # /account/password/<token>, a one-time page
 app.include_router(setup.router)         # first-run setup, /api/setup/v1 (docs/setup-api.md)
 app.include_router(catalog.router)
 app.include_router(ops.router)

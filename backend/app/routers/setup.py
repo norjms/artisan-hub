@@ -100,6 +100,8 @@ def initialize(body: InitializeIn, request: Request, db: Session = Depends(get_d
     team.name, team.slug = name, slug
     with use_team(1):
         raw = new_api_key(db, body.key_name.strip(), INSTALLER_SCOPES, team_id=1)
+        from ..models import ApiKey
+        row.installer_key_id = db.execute(select(ApiKey.id).where(ApiKey.prefix == raw.split("_")[1])).scalar()
     row.farm, row.farm_source = body.farm, "setup"
     row.setup_completed_at = datetime.now(timezone.utc)
     row.setup_token_hash = None
@@ -133,6 +135,37 @@ class ReachStatus(BaseModel):
     seen: bool
     seen_at: datetime | None
     via_proxy: bool | None
+
+
+class PasswordLinkIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class PasswordLinkOut(BaseModel):
+    link: str
+    expires_in_minutes: int
+    user: str
+
+
+@router.post("/password-link", response_model=PasswordLinkOut)
+def password_link(body: PasswordLinkIn, db: Session = Depends(get_db), p=Depends(need("admin"))) -> PasswordLinkOut:
+    """A one-time link to the hub's page where the person with this email chooses the password of their LLDAP
+    login. For the installer, which makes the owner's login but never sees its password: only the key setup
+    minted may ask, since the link sets anyone's password. Needs LLDAP."""
+    from ..clients import lldap_api
+    row = db.get(Installation, 1)
+    if not row or not row.installer_key_id or p.get("key_id") != row.installer_key_id:
+        raise HTTPException(403, "only the key made at setup can ask for a password link")
+    from ..services.teams import new_password_link
+    ld = lldap_api.client()
+    if ld is None:
+        raise HTTPException(409, "this hub does not manage logins in LLDAP")
+    found = ld.user_by_email(body.email)
+    if not found:
+        raise HTTPException(404, "no login with that email")
+    link = new_password_link(db, found["id"], body.email, timedelta(minutes=30))
+    db.commit()
+    return PasswordLinkOut(link=link, expires_in_minutes=30, user=found["id"])
 
 
 @router.post("/reach", response_model=ReachOut)

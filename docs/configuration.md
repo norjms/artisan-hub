@@ -52,7 +52,7 @@ People sign in through an OpenID Connect provider such as Authentik. Without it,
 | `HUB_AUTHENTIK_TOKEN` | empty | *Secret.* Authentik service account token. |
 | `HUB_AUTHENTIK_GROUP` | `hub-users` | Group invited people join. |
 | `HUB_AUTHENTIK_INVITE_FLOW` | `artisan-hub-invite` | Slug of the Authentik enrollment flow used for invitations. |
-| `HUB_LLDAP_URL` | empty | LLDAP's web API (for example `http://lldap:17170`), for logins when the provider is Authelia with LLDAP behind it. An invite to someone with no login makes one, with a one-time link to choose its password at `/account/password/...`. Empty turns it off. Used instead of Authentik when set. |
+| `HUB_LLDAP_URL` | empty | LLDAP's web API (for example `http://lldap:17170`), for logins when the provider is Authelia with LLDAP behind it. An invite to someone with no login makes one, with a one-time link to choose its password at `/account/password/...`. With email set up (`HUB_SMTP_HOST`), someone who forgot their password asks for such a link at `/account/password` (point the sign-in page's "Forgot your password?" there); without it, the hub's owner makes one from People. Empty turns it off. Used instead of Authentik when set. |
 | `HUB_LDAP_URL` | empty | LLDAP's LDAP address (for example `ldap://lldap:3890`), where passwords are set. |
 | `HUB_LDAP_BASE_DN` | `dc=artisanhub,dc=local` | LLDAP's base DN. |
 | `HUB_LLDAP_USER` | `hub` | The hub's LLDAP account, in the `lldap_admin` group. |

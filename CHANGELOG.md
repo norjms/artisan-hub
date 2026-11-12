@@ -17,3 +17,9 @@ Notable changes to Artisan Hub. Versions follow the tags of this repository.
 - People brings together Team and the owner's People and teams; Devices brings together the browser add-on,
   Connect a TV and the phone app; printer profiles are a tab of Slicing. The old addresses redirect.
 - The sidebar is served as data at `/api/nav/v1` (`docs/nav-api.md`), so ArtisanHub Farm draws the same one.
+- The sidebar has a Farm group after Print with the pages only the farm has (Files, Slicer, Projects, Statistics,
+  Print reports, Timelapses, Farm settings), shown when the hub links to an installed ArtisanHub Farm.
+- Forgot your password: with logins in LLDAP and email set up, `/account/password` emails a one-time link (30
+  minutes, works once, a new one cancels older ones) to choose a new password. The answer is the same whether or not
+  the login exists, and requests are limited per client and per login. The hub's owner can make such a link for
+  anyone from People.

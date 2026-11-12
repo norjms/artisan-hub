@@ -91,6 +91,12 @@
     if (!confirm(`Remove ${u.name} from every team and turn off their hub sign-in?`)) return;
     await attempt(() => api.post(`/api/platform/users/${u.id}/remove`), 'Removed'); loadHub();
   }
+  // A one-time link for someone to choose a new password (logins in LLDAP), for the owner to pass on.
+  let pwLink = $state(null);
+  async function passwordLink(u) {
+    const r = await attempt(() => api.post(`/api/account/password-link/${u.id}`));
+    pwLink = { ...r, name: u.name };
+  }
   const teamName = (id) => data?.teams.find((x) => x.id === id)?.name || `#${id}`;
   const canSubmit = $derived(add.email && (add.mode !== 'team' || add.team_name.trim()) && (add.mode !== 'join' || add.team_id));
 
@@ -255,12 +261,19 @@
     </section>
     <section class="ah-glass ah-card" style="flex:none">
       <h2 class="ah-card-title">Everyone with a sign-in</h2>
+      {#if pwLink}
+        <div class="ah-banner ah-banner--live" style="flex-direction:column;align-items:flex-start">
+          <div><b>Send {pwLink.name} this link</b> <button class="btn sm" onclick={() => copy(pwLink.link)}>Copy</button></div><code style="word-break:break-all">{pwLink.link}</code>
+          <span>It lets them choose a new password for the login {pwLink.user}. It works once, for {pwLink.expires_in_minutes} minutes, and replaces any older link.</span>
+        </div>
+      {/if}
       <table class="grid"><thead><tr><th>Person</th><th>Teams</th><th>Last sign-in</th><th></th></tr></thead><tbody>
         {#each users as u}
           <tr><td>{u.name}{#if u.platform_admin} <span class="chip live">Hub owner</span>{/if}<div class="ah-muted">{u.email || ''}</div></td>
             <td>{u.teams.map((m) => `${teamName(m.team_id)} (${ROLE_LABEL[m.role]})`).join(', ') || 'None'}</td>
             <td class="ah-muted">{u.last_login_at ? ago(u.last_login_at) : 'Never'}</td>
-            <td style="text-align:right">{#if !u.platform_admin}<button class="btn sm danger" onclick={() => removePerson(u)}>Remove from hub</button>{/if}</td></tr>
+            <td style="text-align:right;white-space:nowrap">{#if u.email}<button class="btn sm ghost" onclick={() => passwordLink(u)}>Make password link</button>{/if}
+              {#if !u.platform_admin}<button class="btn sm danger" onclick={() => removePerson(u)}>Remove from hub</button>{/if}</td></tr>
         {/each}
       </tbody></table>
     </section>

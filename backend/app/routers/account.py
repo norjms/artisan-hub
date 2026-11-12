@@ -1,23 +1,58 @@
-"""The one-time page where a person chooses the password of their LLDAP login, /account/password/<token>.
+"""The one-time page where a person chooses the password of their LLDAP login, /account/password/<token>, and the
+page where someone who forgot theirs asks for such a link, /account/password.
 
-Someone invited who had no login gets a link here; so does the hub's owner, from the installer. The password
-goes from this page to LLDAP and nowhere else; the link works once. Plain server-rendered HTML, so it works
-before sign-in and without the app's own screens.
+Someone invited who had no login gets a link here; so does the hub's owner, from the installer, and anyone the
+hub's owner makes one for from People. Someone who forgot their password asks for one at /account/password (the
+sign-in page's "Forgot your password?" goes there): when the hub can send email and the login exists with an email
+address, the link goes to that address. The answer on screen is the same either way, so the page cannot be used to
+find out which logins exist. The password goes from the one-time page to LLDAP and nowhere else; each link works
+once, and a new one cancels the older ones. Only a hash of a link is kept, and the access log never shows one.
+Plain server-rendered HTML, so it works before sign-in and without the app's own screens.
 """
 import html
-from datetime import datetime, timezone
+import logging
+import re
+import threading
+import time
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Form, Path
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Path, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..auth import need
 from ..clients import lldap_api
 from ..clients.base import ApiError
+from ..config import settings
 from ..db import get_db
-from ..services.teams import find_password_link
+from ..services.teams import find_password_link, new_password_link
 from ..tenant import unscoped
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+RESET_TTL = timedelta(minutes=30)
+SENT = "If that account exists, a link is on its way. It works once, for 30 minutes."
+CLIENT_LIMIT = (5, 15 * 60)      # requests from one address in 15 minutes
+ACCOUNT_LIMIT = (3, 60 * 60)     # links for one login in an hour
+_client_hits: dict[str, list[float]] = {}
+_hits_lock = threading.Lock()
+
+
+class _NoTokens(logging.Filter):
+    """The access log shows /account/password/*** in place of a link's token."""
+    _token = re.compile(r"(/account/password/)[^\s?\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(self._token.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args)
+        elif isinstance(record.msg, str):
+            record.msg = self._token.sub(r"\1***", record.msg)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_NoTokens())
 
 TOKEN = r"^[A-Za-z0-9_-]{20,80}$"
 MIN_LENGTH = 10
@@ -56,6 +91,8 @@ input:focus {{ outline: none; box-shadow: 0 0 0 2px #172028, 0 0 0 4px var(--acc
 button {{ height: 38px; font: 600 14px Manrope, system-ui, sans-serif; color: var(--on-accent); background: var(--accent);
   border: 0; border-radius: 12px; cursor: pointer; }}
 .error {{ color: var(--bad); }}
+a {{ color: #bfe6ff; text-underline-offset: 2px; }}
+.back {{ text-align: center; font-size: 13px; }}
 </style></head>
 <body><div class="wrap"><div class="brand"><span class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
  stroke="#1d2a34" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5z"/><path
@@ -116,3 +153,149 @@ def password_set(token: str = Path(pattern=TOKEN), password: str = Form(""), aga
         link.used_at = datetime.now(timezone.utc)
         db.commit()
     return RedirectResponse("/auth/login", status_code=303)
+
+
+# ---- Forgot your password: a link by email -------------------------------------------------------------------------
+
+def reset_ready() -> bool:
+    """The hub can send a reset link: it has mail set up and keeps logins in LLDAP."""
+    return bool(settings().smtp_host) and lldap_api.client() is not None
+
+
+def _back() -> str:
+    return '<p class="back"><a href="/auth/login">Back to sign in</a></p>'
+
+
+def _reset_form() -> HTMLResponse:
+    return _page(
+        "<h1>Reset your password</h1>"
+        "<p>Enter the username or the email address of your ArtisanHub login. We send a link to choose a new"
+        " password to the email address on the login.</p>"
+        '<form method="post" action="/account/password" autocomplete="on">'
+        '<label for="login">Username or email'
+        '<input id="login" name="login" type="text" maxlength="320" autocomplete="username" autocapitalize="none"'
+        ' spellcheck="false" required autofocus></label>'
+        '<button type="submit">Send reset link</button></form>' + _back())
+
+
+def _reset_off() -> HTMLResponse:
+    return _page(
+        "<h1>Reset your password</h1>"
+        "<p>This hub cannot send email, so it cannot send you a link. Ask the hub's owner for a new link: they can"
+        " make one for you from People.</p>" + _back())
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "?"
+
+
+def _client_allowed(ip: str) -> bool:
+    n, window = CLIENT_LIMIT
+    now = time.monotonic()
+    with _hits_lock:
+        hits = [t for t in _client_hits.get(ip, []) if now - t < window]
+        if len(hits) >= n:
+            _client_hits[ip] = hits
+            return False
+        hits.append(now)
+        _client_hits[ip] = hits
+        if len(_client_hits) > 10000:   # forget addresses that have gone quiet
+            for k in [k for k, v in _client_hits.items() if not v or now - v[-1] >= window]:
+                _client_hits.pop(k, None)
+    return True
+
+
+def _fresh_link(db: Session, uid: str, email: str) -> str:
+    """A new one-time link for this login; older unused ones stop working."""
+    from ..models import PasswordLink
+    now = datetime.now(timezone.utc)
+    for old in db.execute(select(PasswordLink).where(PasswordLink.uid == uid, PasswordLink.used_at.is_(None))).scalars():
+        old.used_at = now
+    return new_password_link(db, uid, email, RESET_TTL)
+
+
+def _account_allowed(db: Session, uid: str) -> bool:
+    from ..models import PasswordLink
+    n, window = ACCOUNT_LIMIT
+    since = datetime.now(timezone.utc) - timedelta(seconds=window)
+    rows = db.execute(select(PasswordLink.created_at).where(PasswordLink.uid == uid)).scalars()
+    recent = [c for c in rows if (c if c.tzinfo else c.replace(tzinfo=timezone.utc)) > since]
+    return len(recent) < n
+
+
+def send_reset_link(login: str) -> None:
+    """Look the login up in LLDAP and, when it exists with an email address, email it a one-time link. Runs after
+    the answer has gone, so the time the page takes says nothing about whether the login exists. Says nothing back."""
+    from ..db import SessionLocal
+    from ..services import emails
+    from ..tasks import send_mail
+    ld = lldap_api.client()
+    if ld is None or not settings().smtp_host:
+        return
+    login = (login or "").strip().lower()[:320]
+    try:
+        found = ld.user_by_email(login) if "@" in login else ld.user(login)
+    except ApiError:
+        log.warning("password reset: LLDAP did not answer")
+        return
+    email = ((found or {}).get("email") or "").strip().lower()
+    if not found or not email or found.get("id") == getattr(ld, "bind_user", None):
+        return   # no such login, no address to send to, or the hub's own LLDAP account
+    db = SessionLocal()
+    try:
+        with unscoped():
+            if not _account_allowed(db, found["id"]):
+                log.info("password reset: limit reached for one login; nothing sent")
+                return
+            link = _fresh_link(db, found["id"], email)
+            db.commit()
+    finally:
+        db.close()
+    mail = emails.password_reset(link, int(RESET_TTL.total_seconds() // 60), settings().public_url)
+    try:
+        send_mail(mail.subject, mail.text(), to=[email], html=mail.html())
+    except Exception as e:  # noqa: BLE001
+        log.warning("password reset: the email could not be sent (%s)", type(e).__name__)
+
+
+@router.get("/account/password", include_in_schema=False)
+def reset_page():
+    return _reset_form() if reset_ready() else _reset_off()
+
+
+@router.post("/account/password", include_in_schema=False)
+def reset_request(request: Request, background: BackgroundTasks, login: str = Form("")):
+    if not reset_ready():
+        return _reset_off()
+    if not _client_allowed(_client_ip(request)):
+        return _page("<h1>Reset your password</h1><p class=\"error\" role=\"alert\">Too many requests from here."
+                     " Try again in 15 minutes.</p>" + _back(), 429)
+    if login.strip():
+        background.add_task(send_reset_link, login)
+    return _page("<h1>Reset your password</h1>"
+                 f'<p role="status">{html.escape(SENT)}</p>'
+                 "<p>Nothing came? Check the spam folder, or ask the hub's owner for a link.</p>" + _back())
+
+
+# ---- The hub's owner makes a link for someone (People) --------------------------------------------------------------
+
+@router.post("/api/account/password-link/{user_id}")
+def owner_password_link(user_id: int, db: Session = Depends(get_db), p=Depends(need("platform"))):
+    """A one-time link for this person to choose a new password, for the hub's owner to pass on. Needs LLDAP."""
+    from ..models import User
+    u = db.get(User, user_id)
+    if not u or not u.email:
+        raise HTTPException(404, "no one with an email address there")
+    ld = lldap_api.client()
+    if ld is None:
+        raise HTTPException(409, "this hub does not manage logins in LLDAP")
+    try:
+        found = ld.user_by_email(u.email)
+    except ApiError as e:
+        raise HTTPException(502, f"LLDAP did not answer: {e.message}") from None
+    if not found:
+        raise HTTPException(404, f"no login in LLDAP has the email {u.email}")
+    with unscoped():
+        link = _fresh_link(db, found["id"], u.email)
+        db.commit()
+    return {"link": link, "user": found["id"], "expires_in_minutes": int(RESET_TTL.total_seconds() // 60)}

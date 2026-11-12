@@ -23,3 +23,6 @@ Notable changes to Artisan Hub. Versions follow the tags of this repository.
   minutes, works once, a new one cancels older ones) to choose a new password. The answer is the same whether or not
   the login exists, and requests are limited per client and per login. The hub's owner can make such a link for
   anyone from People.
+- OrcaSlicer in the browser: on an installation that runs it behind Authelia (`HUB_ORCASLICER_GROUP`), the hub's
+  owner turns it on or off per person on People (Whole hub). The person joins or leaves that LLDAP group; hub
+  owners can always open it.

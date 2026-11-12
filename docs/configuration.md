@@ -58,6 +58,7 @@ People sign in through an OpenID Connect provider such as Authentik. Without it,
 | `HUB_LLDAP_USER` | `hub` | The hub's LLDAP account, in the `lldap_admin` group. |
 | `HUB_LLDAP_PASSWORD` | empty | *Secret.* Its password. |
 | `HUB_LLDAP_GROUP` | `hub-users` | Group invited people join. |
+| `HUB_ORCASLICER_GROUP` | empty | When the installation runs OrcaSlicer in the browser behind Authelia: the LLDAP group whose members may open it, besides the hub's owners (`HUB_ADMIN_GROUP`), who always may. The owner turns it on or off per person on People (Whole hub). Needs `HUB_LLDAP_URL`. Empty means the hub shows no such switch. |
 | `HUB_OIDC_LOGOUT_URL` | empty | Where signing out sends people, for a provider without an end-session page at the issuer. |
 
 ## WooCommerce

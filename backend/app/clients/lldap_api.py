@@ -82,6 +82,12 @@ class LldapClient:
             self._group_id = found
         return found
 
+    def group_members(self, name: str) -> list[dict]:
+        """The logins in a group: id and email of each."""
+        found = self.gql('query($g: Int!) { group(groupId: $g) { users { id email } } }',
+                         {"g": self.group_id(name)}).get("group") or {}
+        return found.get("users") or []
+
     def _free_uid(self, email: str) -> str:
         base = re.sub(r"[^a-z0-9._-]", "-", email.split("@")[0].lower()).strip("-.") or "user"
         base = base[:40]

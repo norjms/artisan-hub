@@ -477,7 +477,7 @@ def platform_users(db: Session = Depends(get_db), p: Principal = Depends(need("p
 class PersonIn(BaseModel):
     email: str
     name: str | None = None
-    mode: str                      # team (they own a new team) | individual (their own workspace) | join (an existing team)
+    mode: str | None = None        # only "join" (B25: an installation has one team, which everyone added joins)
     team_name: str | None = None
     team_id: int | None = None
     role: str = "member"
@@ -487,22 +487,19 @@ class PersonIn(BaseModel):
 @router.post("/platform/people")
 def add_person(body: PersonIn, db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
     by = db.get(User, p["user_id"]) if p.get("user_id") else None
-    kind = {"team": "new_team", "individual": "individual", "join": "join"}.get(body.mode)
-    if not kind:
-        raise HTTPException(400, "choose: as a team, as an individual, or into an existing team")
-    perms = None
-    if kind == "join":
-        if not body.team_id or not db.get(Team, body.team_id):
-            raise HTTPException(400, "pick a team")
-        if body.role not in ROLES:
-            raise HTTPException(400, "unknown role")
-        try:
-            perms = tsvc.clean_perms(body.perms, body.role, list(PERMS))
-        except PermissionError as e:
-            raise HTTPException(403, str(e))
+    # An installation has one team: everyone added joins it, with the role chosen.
+    if body.mode not in (None, "", "join"):
+        raise HTTPException(400, tsvc.ONE_TEAM_ONLY)
+    if body.team_id not in (None, tsvc.ONE_TEAM):
+        raise HTTPException(400, tsvc.ONE_TEAM_ONLY)
+    if body.role not in ROLES:
+        raise HTTPException(400, "unknown role")
     try:
-        raw, inv = tsvc.create_invite(db, body.team_id if kind == "join" else None, body.email, body.role, by, kind=kind,
-                                      team_name=body.team_name, name=body.name, perms=perms)
+        perms = tsvc.clean_perms(body.perms, body.role, list(PERMS))
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    try:
+        raw, inv = tsvc.create_invite(db, tsvc.ONE_TEAM, body.email, body.role, by, name=body.name, perms=perms)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return _send_invite(db, inv, raw, by)

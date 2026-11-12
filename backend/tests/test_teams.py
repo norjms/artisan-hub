@@ -1,4 +1,5 @@
-"""Team isolation: one team can never read, change or act on another team's data, and roles are enforced."""
+"""An installation has one team (B25), and roles are enforced in it. The rows of different teams still never mix:
+the team filtering stays as a safety net, checked here with a second team made directly in the database."""
 import base64
 import hashlib
 import hmac
@@ -39,6 +40,29 @@ def two_teams():
         db.flush()
         return {"t2": t2.id, "slug": t2.slug, "owner": owner.id, "member": member.id, "viewer": viewer.id,
                 "outsider": outsider.id, "owner_email": owner.email, "outsider_email": outsider.email}
+
+
+@pytest.fixture
+def people():
+    """The installation's one team, with a new owner, member and viewer in it, and someone in no team."""
+    from app.db import session_scope
+    from app.models import Membership, User
+    from app.tenant import unscoped
+    import secrets as _s
+    tag = _s.token_hex(3)
+    with session_scope() as db, unscoped():
+        owner = User(sub=f"owner1-{tag}", email=f"owner1-{tag}@a.example", name="Ann Owner")
+        member = User(sub=f"member1-{tag}", email=f"member1-{tag}@a.example", name="Mo Member")
+        viewer = User(sub=f"viewer1-{tag}", email=f"viewer1-{tag}@a.example", name="Val Viewer")
+        outsider = User(sub=f"out1-{tag}", email=f"out1-{tag}@c.example", name="Olly Outsider")
+        db.add_all([owner, member, viewer, outsider])
+        db.flush()
+        db.add(Membership(team_id=1, user_id=owner.id, role="owner"))
+        db.add(Membership(team_id=1, user_id=member.id, role="member"))
+        db.add(Membership(team_id=1, user_id=viewer.id, role="viewer"))
+        db.flush()
+        return {"owner": owner.id, "member": member.id, "viewer": viewer.id, "outsider": outsider.id,
+                "outsider_email": outsider.email}
 
 
 def key_for(team_id, user_id=None, scopes=("read", "write", "admin")):
@@ -173,59 +197,71 @@ def test_api_key_sees_only_its_team(two_teams, real_auth):
     assert "Secret A model" not in out["result"]["content"][0]["text"]
 
 
-def test_roles(two_teams, real_auth):
-    t2 = two_teams["t2"]
+def test_roles(people, real_auth):
     c = client()
-    viewer_key = key_for(t2, two_teams["viewer"], ("read", "write", "admin"))   # capped by the viewer role
+    viewer_key = key_for(1, people["viewer"], ("read", "write", "admin"))   # capped by the viewer role
     assert c.get("/api/models", headers=H(viewer_key)).status_code == 200
     r = c.post("/api/models", json={"name": "viewer try"}, headers=H(viewer_key))
     assert r.status_code == 403 and "permission" in r.json()["detail"]
-    member_key = key_for(t2, two_teams["member"])
+    member_key = key_for(1, people["member"])
     assert c.post("/api/models", json={"name": "member ok"}, headers=H(member_key)).status_code == 200
     assert c.get("/api/connections", headers=H(member_key)).status_code == 403
     # people
-    owner = as_user(two_teams["owner"], t2)
-    member = as_user(two_teams["member"], t2)
-    assert member.patch(f"/api/team/members/{two_teams['viewer']}", json={"role": "admin"}).status_code == 403
-    assert owner.patch(f"/api/team/members/{two_teams['member']}", json={"role": "admin"}).status_code == 200
-    admin = as_user(two_teams["member"], t2)
-    assert admin.patch(f"/api/team/members/{two_teams['owner']}", json={"role": "member"}).status_code == 403
-    assert owner.patch(f"/api/team/members/{two_teams['owner']}", json={"role": "admin"}).status_code == 400  # last owner
-    assert owner.post("/api/team/leave").status_code == 400
+    owner = as_user(people["owner"])
+    member = as_user(people["member"])
+    assert member.patch(f"/api/team/members/{people['viewer']}", json={"role": "admin"}).status_code == 403
+    assert owner.patch(f"/api/team/members/{people['member']}", json={"role": "admin"}).status_code == 200
+    admin = as_user(people["member"])
+    assert admin.patch(f"/api/team/members/{people['owner']}", json={"role": "member"}).status_code == 403
     # removing someone kills their keys
-    assert owner.delete(f"/api/team/members/{two_teams['viewer']}").status_code == 200
+    assert owner.delete(f"/api/team/members/{people['viewer']}").status_code == 200
     assert c.get("/api/models", headers=H(viewer_key)).status_code == 401
 
 
-def test_session_team_switching(two_teams, real_auth):
-    t2 = two_teams["t2"]
-    owner = as_user(two_teams["owner"])
+def test_the_last_owner_stays(real_auth):
+    from app.db import session_scope
+    from app.models import Membership
+    from app.services import teams as tsvc
+    from app.tenant import unscoped
+    with session_scope() as db, unscoped():
+        owners = tsvc.owners(db, 1)
+        keep = owners[0].id
+        for u in owners[1:]:
+            db.execute(Membership.__table__.update().where(Membership.team_id == 1, Membership.user_id == u.id)
+                       .values(role="admin"))
+    owner = as_user(keep)
+    assert owner.patch(f"/api/team/members/{keep}", json={"role": "admin"}).status_code == 400
+    assert owner.post("/api/team/leave").status_code == 400
+
+
+def test_an_installation_has_one_team(people, two_teams, real_auth):
+    owner = as_user(people["owner"])
     me = owner.get("/api/me").json()
-    assert {t["id"] for t in me["teams"]} >= {t2}
-    assert owner.get("/api/me", headers={"X-Hub-Team": "1"}).status_code == 403          # not a member of team 1
-    assert owner.post("/api/me/team", json={"team": 1}).status_code == 403
-    assert owner.get("/api/me", headers={"X-Hub-Team": two_teams["slug"]}).json()["team"]["id"] == t2
-    outsider = as_user(two_teams["outsider"])
-    assert outsider.get("/api/team").json()["id"] != t2
-    assert outsider.get("/api/team", headers={"X-Hub-Team": str(t2)}).status_code == 403
+    assert [t["id"] for t in me["teams"]] == [1] and me["team"]["id"] == 1
+    # No other team can be picked, even one left in the database from before.
+    assert owner.get("/api/me", headers={"X-Hub-Team": str(two_teams["t2"])}).status_code == 403
+    assert owner.post("/api/me/team", json={"team": two_teams["t2"]}).status_code == 403
+    assert owner.post("/api/me/team", json={"team": 1}).status_code == 200
+    # Someone whose only team is another one is not let in, and nobody signed out is.
+    r = as_user(two_teams["owner"]).get("/api/team")
+    assert r.status_code == 403 and r.json()["detail"] == "no_team"
     assert client().get("/api/models").status_code == 401
 
 
-def test_invites(two_teams, real_auth):
-    t2 = two_teams["t2"]
-    owner = as_user(two_teams["owner"], t2)
-    r = owner.post("/api/team/invites", json={"email": two_teams["outsider_email"], "role": "member"})
+def test_invites(people, real_auth):
+    owner = as_user(people["owner"])
+    r = owner.post("/api/team/invites", json={"email": people["outsider_email"], "role": "member"})
     assert r.status_code == 200
     token = r.json()["link"].rsplit("/", 1)[1]
-    wrong = as_user(two_teams["member"], t2)
+    wrong = as_user(people["member"])
     assert wrong.post(f"/api/invites/{token}/accept").status_code == 403       # someone else's invite
-    otto = as_user(two_teams["outsider"])
-    info = otto.get(f"/api/invites/{token}").json()
+    olly = as_user(people["outsider"])
+    info = olly.get(f"/api/invites/{token}").json()
     assert info["matches"] and info["role"] == "member"
-    assert otto.post(f"/api/invites/{token}/accept").status_code == 200
-    assert otto.post(f"/api/invites/{token}/accept").status_code == 404        # used
-    assert otto.get("/api/team").json()["id"] == t2
-    member = as_user(two_teams["member"], t2)
+    assert olly.post(f"/api/invites/{token}/accept").status_code == 200
+    assert olly.post(f"/api/invites/{token}/accept").status_code == 404        # used
+    assert olly.get("/api/team").json()["id"] == 1
+    member = as_user(people["member"])
     assert member.post("/api/team/invites", json={"email": "x@y.example", "role": "member"}).status_code == 403
     assert owner.post("/api/team/invites", json={"email": "not-an-email", "role": "member"}).status_code == 400
 
@@ -234,13 +270,13 @@ def test_connections_are_per_team(two_teams, real_auth):
     from app import clients
     from app.tenant import use_team
     t2 = two_teams["t2"]
-    owner = as_user(two_teams["owner"], t2)
-    r = owner.put("/api/connections/woo", json={"config": {"url": "https://b-shop.example"},
-                                                "secrets": {"key": "ck_b", "secret": "cs_b"}})
+    c, k = client(), H(key_for(t2, two_teams["owner"]))
+    r = c.put("/api/connections/woo", json={"config": {"url": "https://b-shop.example"},
+                                            "secrets": {"key": "ck_b", "secret": "cs_b"}}, headers=k)
     assert r.status_code == 200
     v = r.json()
     assert v["secrets"] == {"key": True, "secret": True, "webhook_secret": False}
-    assert "ck_b" not in json.dumps(owner.get("/api/connections").json())
+    assert "ck_b" not in json.dumps(c.get("/api/connections", headers=k).json())
     with use_team(t2):
         cb = clients.woo()
         assert "b-shop.example" in cb.base_url
@@ -251,7 +287,7 @@ def test_connections_are_per_team(two_teams, real_auth):
         except NotConnected:
             ca = None
     assert ca is not cb
-    assert owner.put("/api/connections/woo", json={"config": {"url": "file:///etc/passwd"}}).status_code == 400
+    assert c.put("/api/connections/woo", json={"config": {"url": "file:///etc/passwd"}}, headers=k).status_code == 400
 
 
 def test_webhook_routes_by_team(two_teams):
@@ -323,37 +359,60 @@ def test_unconnected_service_jobs_are_skipped(two_teams):
         assert j.state == "done" and "not connected" in j.result["skipped"]
 
 
-def test_platform_admin_only(two_teams, real_auth):
-    owner = as_user(two_teams["owner"], two_teams["t2"])
+def test_platform_admin_only(people, real_auth):
+    owner = as_user(people["owner"])
     assert owner.get("/api/platform/teams").status_code == 403
-    assert owner.patch(f"/api/platform/teams/{two_teams['t2']}", json={"source_dirs": {"inbox": "/etc"}}).status_code == 403
+    assert owner.patch("/api/platform/teams/1", json={"source_dirs": {"inbox": "/etc"}}).status_code == 403
 
 
-def test_first_sign_in(two_teams, real_auth, monkeypatch):
+def test_first_sign_in(real_auth, monkeypatch):
     from app.config import settings
     from app.db import session_scope
-    from app.models import Team
     from app.services import teams as tsvc
     from app.tenant import unscoped
     import secrets as _s
     tag = _s.token_hex(3)
     monkeypatch.setattr(settings(), "admin_group", "platform-admins")
     with session_scope() as db, unscoped():
-        # nobody gets a workspace just by signing in; the hub owner or a team invites them
+        # nobody gets into the team just by signing in; the hub owner or the team invites them
         u = tsvc.upsert_user(db, {"sub": f"new-{tag}", "email": f"new-{tag}@x.example", "name": "Nia New"}, ["hub-users"])
         assert tsvc.user_teams(db, u) == [] and not u.platform_admin
-        tsvc.create_invite(db, two_teams["t2"], f"inv-{tag}@x.example", "member", None)
+        tsvc.create_invite(db, 1, f"inv-{tag}@x.example", "member", None)
         v = tsvc.upsert_user(db, {"sub": f"inv-{tag}", "email": f"inv-{tag}@x.example", "name": "Ivo Invited"}, [])
         assert tsvc.user_teams(db, v) == []
         vid = v.id
         # platform admins are flagged; they only take over team 1 if it has no owner
         a = tsvc.upsert_user(db, {"sub": f"adm-{tag}", "email": f"adm-{tag}@x.example"}, ["platform-admins"])
         assert a.platform_admin
+        # invites only ever join the installation's one team
+        for kind in ("new_team", "individual"):
+            with pytest.raises(ValueError, match="one team"):
+                tsvc.create_invite(db, None, f"{kind}-{tag}@x.example", "owner", None, kind=kind, team_name="Elsewhere")
+        with pytest.raises(ValueError, match="one team"):
+            tsvc.create_invite(db, 999, f"other-{tag}@x.example", "member", None)
     from app.auth import _has_invite
     assert _has_invite(f"inv-{tag}@x.example") and not _has_invite(f"nobody-{tag}@x.example")
     r = as_user(vid).get("/api/me")
     assert r.status_code == 403 and r.json()["detail"] == "no_team"
 
+
+def test_an_invite_from_before_joins_the_one_team_as_a_member(real_auth):
+    from app.db import session_scope
+    from app.models import Invite, User
+    from app.services import teams as tsvc
+    from app.tenant import unscoped
+    import secrets as _s
+    tag = _s.token_hex(3)
+    with session_scope() as db, unscoped():
+        u = User(sub=f"old-{tag}", email=f"old-{tag}@x.example", name="Ola Old")
+        db.add(u)
+        db.flush()
+        inv = Invite(team_id=None, kind="new_team", team_name="Ola Co", email=u.email, role="owner",
+                     token_hash=f"h-{tag}", expires_at=tsvc._now() + tsvc.INVITE_TTL)
+        db.add(inv)
+        db.flush()
+        m = tsvc.accept_invite(db, inv, u)
+        assert (m.team_id, m.role) == (1, "member") and inv.team_id == 1
 
 
 class FakeAK:
@@ -379,14 +438,13 @@ class FakeAK:
         self.deleted.append(pk)
 
 
-def test_permissions_per_person(two_teams, real_auth):
-    t2 = two_teams["t2"]
-    owner = as_user(two_teams["owner"], t2)
-    member = as_user(two_teams["member"], t2)
+def test_permissions_per_person(people, real_auth):
+    owner = as_user(people["owner"])
+    member = as_user(people["member"])
     # members can't invite by default
     assert member.post("/api/team/invites", json={"email": "a@b.example"}).status_code == 403
     # the owner ticks "invite" for this member
-    r = owner.patch(f"/api/team/members/{two_teams['member']}", json={"perms": ["view", "models", "slice", "inventory", "farm", "invite"]})
+    r = owner.patch(f"/api/team/members/{people['member']}", json={"perms": ["view", "models", "slice", "inventory", "farm", "invite"]})
     assert r.status_code == 200 and r.json()["custom"] and "invite" in r.json()["perms"]
     assert member.post("/api/team/invites", json={"email": "c@d.example", "role": "member"}).status_code == 200
     # but can't hand out more than they hold
@@ -395,21 +453,21 @@ def test_permissions_per_person(two_teams, real_auth):
     r = member.post("/api/team/invites", json={"email": "g@h.example", "role": "member", "perms": ["view", "store"]})
     assert r.status_code == 403
     # nobody changes their own permissions
-    assert member.patch(f"/api/team/members/{two_teams['member']}", json={"role": "admin"}).status_code in (400, 403)
+    assert member.patch(f"/api/team/members/{people['member']}", json={"role": "admin"}).status_code in (400, 403)
     # taking a permission away works immediately
-    r = owner.patch(f"/api/team/members/{two_teams['member']}", json={"perms": ["view"]})
+    r = owner.patch(f"/api/team/members/{people['member']}", json={"perms": ["view"]})
     assert r.json()["perms"] == ["view"]
     assert member.post("/api/models", json={"name": "nope"}).status_code == 403
-    r = owner.patch(f"/api/team/members/{two_teams['member']}", json={"reset_perms": True})
+    r = owner.patch(f"/api/team/members/{people['member']}", json={"reset_perms": True})
     assert not r.json()["custom"] and "models" in r.json()["perms"]
     # me reports the effective permissions
     assert "invite" not in member.get("/api/me").json()["perms"]
 
 
-def test_hub_owner_adds_people(two_teams, real_auth, monkeypatch):
+def test_hub_owner_adds_people(people, real_auth, monkeypatch):
     from app.clients import authentik_api
     from app.db import session_scope
-    from app.models import User
+    from app.models import Membership, User
     from app.tenant import unscoped
     import secrets as _s
     tag = _s.token_hex(3)
@@ -420,40 +478,43 @@ def test_hub_owner_adds_people(two_teams, real_auth, monkeypatch):
         newbie = User(sub=f"nb-{tag}", email=f"newbie-{tag}@x.example", name="Ned")
         known = User(sub=f"kn-{tag}", email=f"known-{tag}@x.example", name="Kim")
         db.add_all([boss, newbie, known]); db.flush()
-        from app.models import Membership
-        db.add(Membership(team_id=two_teams["t2"], user_id=boss.id, role="owner"))
+        db.add(Membership(team_id=1, user_id=boss.id, role="owner"))
         ids = (boss.id, newbie.id, known.id)
-    hub = as_user(ids[0], two_teams["t2"])
+    hub = as_user(ids[0])
     # team owners who are not the hub owner can't use this
-    assert as_user(two_teams["owner"], two_teams["t2"]).post("/api/platform/people", json={"email": "z@z.example", "mode": "individual"}).status_code == 403
-    # someone with no Authentik account gets an Authentik invitation
-    r = hub.post("/api/platform/people", json={"email": f"newbie-{tag}@x.example", "name": "Ned", "mode": "team", "team_name": f"Ned Co {tag}"})
+    assert as_user(people["owner"]).post("/api/platform/people", json={"email": "z@z.example"}).status_code == 403
+    # there is no other team to add anyone to, nor a workspace of their own
+    for body in ({"mode": "team", "team_name": "Elsewhere"}, {"mode": "individual"}, {"mode": "join", "team_id": 999}):
+        r = hub.post("/api/platform/people", json={"email": f"nope-{tag}@x.example", **body})
+        assert r.status_code == 400 and "one team" in r.json()["detail"]
+    # someone with no Authentik account gets an Authentik invitation, and joins the team
+    r = hub.post("/api/platform/people", json={"email": f"newbie-{tag}@x.example", "name": "Ned", "role": "admin"})
     assert r.status_code == 200, r.text
     assert r.json()["account"] == "invited" and r.json()["signup_url"].startswith("https://auth.example/")
     token = r.json()["link"].rsplit("/", 1)[1]
     info = client().get(f"/api/invites/{token}").json()          # readable before sign-in
-    assert info["signup_url"] and info["team"] == f"Ned Co {tag}" and not info["signed_in"]
+    assert info["signup_url"] and not info["signed_in"]
     ned = as_user(ids[1])
     assert ned.post(f"/api/invites/{token}/accept").status_code == 200
     me = ned.get("/api/me").json()
-    assert me["team"]["name"] == f"Ned Co {tag}" and me["team"]["role"] == "owner"
+    assert me["team"]["id"] == 1 and me["team"]["role"] == "admin"
     # someone who already has an Authentik account is added to the hub-users group
-    r = hub.post("/api/platform/people", json={"email": f"known-{tag}@x.example", "mode": "individual"})
+    r = hub.post("/api/platform/people", json={"email": f"known-{tag}@x.example"})
     assert r.json()["account"] == "existing" and 100 in ak.added
     token = r.json()["link"].rsplit("/", 1)[1]
     kim = as_user(ids[2])
     assert kim.post(f"/api/invites/{token}/accept").status_code == 200
     kt = kim.get("/api/team").json()
-    assert kt["personal"] and kt["role"] == "owner"
-    # into an existing team with a role
-    r = hub.post("/api/platform/people", json={"email": f"third-{tag}@x.example", "mode": "join", "team_id": two_teams["t2"], "role": "viewer"})
+    assert kt["id"] == 1 and kt["role"] == "member"
+    # with a role of their own
+    r = hub.post("/api/platform/people", json={"email": f"third-{tag}@x.example", "role": "viewer"})
     assert r.status_code == 200 and r.json()["invite"]["role"] == "viewer"
     # cancelling removes the Authentik invitation too
     inv_id = r.json()["invite"]["id"]
     assert hub.delete(f"/api/platform/invites/{inv_id}").status_code == 200 and ak.deleted
-    # removing someone from their last team takes them out of hub-users
+    # removing someone from the team takes them out of hub-users
     r = hub.post(f"/api/platform/users/{ids[2]}/remove")
     assert r.json()["hub_access_removed"] and 100 in ak.removed
     assert kim.get("/api/me").json()["detail"] == "no_team"
-    # only the hub owner can create teams
+    # nobody creates teams
     assert ned.post("/api/teams", json={"name": "x"}).status_code in (403, 404, 405)

@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     rs_user: str = ""
     rs_key: str = ""
 
+    # The model library (gyroidhub, under the hub's name at /apps/models/ in an ArtisanHub installation): it browses
+    # the hub's library with a 3D view. The hub links to it from its menu and from each model.
+    models_url: str = ""
+
     # Manyfold
     manyfold_url: str = ""
     manyfold_public_url: str = ""

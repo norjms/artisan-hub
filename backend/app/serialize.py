@@ -116,6 +116,7 @@ def model_detail(m: Model) -> dict:
         "library_rel": m.library_rel, "category_id": m.category_id, "designer_id": m.designer_id,
         "published_at": m.published_at.isoformat() if m.published_at else None,
         "created_at": m.created_at.isoformat() if m.created_at else None,
+        "models_url": _models_url(m),
         "manyfold_url": _manyfold_url(m),
         "dam_url": f"https://{dam_host}/pages/search.php?search=!collection{m.dam_collection_ref}"
         if m.dam_collection_ref and dam_host else None,
@@ -125,6 +126,18 @@ def model_detail(m: Model) -> dict:
         "product": product(m.product),
     })
     return d
+
+
+def _models_url(m: Model):
+    """The model in the model library: its list, searched for the model's folder, which is the name the library
+    gives it. None without a model library or before the model has a folder."""
+    base = settings().models_url
+    if not base or not m.library_rel:
+        return None
+    from pathlib import PurePosixPath
+    from urllib.parse import quote
+    name = PurePosixPath(m.library_rel.strip("/")).name
+    return f"{base.rstrip('/')}/#/models?search={quote(name)}"
 
 
 def _manyfold_url(m: Model):

@@ -162,7 +162,7 @@
       {/if}
 
       <div class="panel p-4 grid grid-cols-2 gap-2 text-sm">
-        {#if m.manyfold_url}<a class="btn sm" target="_blank" href={m.manyfold_url}>Manyfold 3D view</a>{:else}<span class="btn sm" title="Appears after Manyfold scans the library">Manyfold pending</span>{/if}
+        {#if m.models_url}<a class="btn sm" href={m.models_url}>3D view</a>{:else if m.manyfold_url}<a class="btn sm" target="_blank" href={m.manyfold_url}>Manyfold 3D view</a>{/if}
         {#if m.dam_url}<a class="btn sm" target="_blank" href={m.dam_url}>Photos in DAM</a>{/if}
         {#if m.source_url}<a class="btn sm" target="_blank" href={m.source_url}>{m.makerworld_id ? 'MakerWorld page' : ({ printables: 'Printables page', thingiverse: 'Thingiverse page', creality: 'Creality Cloud page' }[m.source_platform] || 'Designer page')}</a>{/if}
         {#if m.patreon_url}<a class="btn sm" target="_blank" href={m.patreon_url}>Patreon</a>{/if}

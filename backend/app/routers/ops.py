@@ -55,6 +55,7 @@ def me(db: Session = Depends(get_db), p: Principal = Depends(need("read"))):
             "team": {"id": p["team_id"], "slug": p.get("team_slug"), "name": p.get("team_name"), "role": p.get("role")},
             "scopes": p.get("perms") or [], "perms": p.get("perms") or [], "teams": teams,
             "links": {"woo": woo + "/wp-admin/" if woo else None, "dam": f"https://{dam}" if dam and "://" not in dam else dam,
+                      "models": settings().models_url or None,
                       "manyfold": public_url("manyfold"), "watchtower": public_url("watchtower"),
                       "inventree": public_url("inventree"), "spoolman": public_url("spoolman")}}
 

@@ -1,4 +1,6 @@
 <script>
+  import Glyph from '$lib/Glyph.svelte';
+  import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
@@ -61,22 +63,17 @@
   const needToken = $derived(platform === 'thingiverse' && accts && !accts.thingiverse?.connected);
 </script>
 
-<div class="flex flex-wrap items-end gap-3 mb-3">
-  <div class="flex-1 min-w-[220px]">
-    <h1 class="text-2xl font-bold">Find models</h1>
-    <p class="muted text-sm">Only licenses that allow selling prints. {total ? `${Number(total).toLocaleString()} matches` : ''}</p>
-  </div>
-</div>
-<div class="flex gap-1 mb-3 scroll-x">
+<Page title="Find models" description={`Only licenses that allow selling prints.${total ? ` ${Number(total).toLocaleString()} matches.` : ''}`}>
+<div class="ah-tabs" role="tablist" aria-label="Model sites">
   {#each PLATFORMS as [k, l]}
-    <button class="px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap {platform === k ? 'bg-brand-600 text-white' : 'panel'}" onclick={() => switchTo(k)}>{l}</button>
+    <button role="tab" aria-selected={platform === k} onclick={() => switchTo(k)}>{l}</button>
   {/each}
 </div>
 {#if needToken}
   <div class="panel p-4 mb-4 text-sm">Thingiverse only works with an App Token. Create a free app at <a class="underline" target="_blank" href="https://www.thingiverse.com/apps/create">thingiverse.com/apps/create</a> (choose Web App), copy its App Token and paste it in <a class="underline" href="/settings">Settings</a>.</div>
 {/if}
 <form class="panel p-3 flex flex-wrap gap-2 mb-4" onsubmit={(e) => { e.preventDefault(); search(); }}>
-  <input class="input flex-1 min-w-[200px]" placeholder="Search: planter, articulated dragon, cable organizer…" bind:value={q} />
+  <input class="input flex-1 min-w-[200px]" placeholder="Search: planter, articulated dragon, cable organizer" bind:value={q} />
   <select class="input w-auto" bind:value={lic} onchange={() => search()}>
     <option value="sellable">All that allow selling</option>
     {#each LICS[platform] as [v, l]}<option value={v}>{l}</option>{/each}
@@ -94,8 +91,8 @@
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6 gap-3">
       {#each items as it (it.id)}
         {@const lc = licenseChip(it.license)}
-        <button class="panel overflow-hidden text-left hover:shadow-lg transition {picked?.id === it.id ? 'ring-2 ring-brand-600' : ''}" onclick={() => pick(it)}>
-          <div class="aspect-[3/4] bg-black/5 relative">
+        <button class="panel overflow-hidden text-left hover:shadow-lg transition {picked?.id === it.id ? 'ring-2 ring-ah-accent' : ''}" onclick={() => pick(it)}>
+          <div class="aspect-[3/4] bg-ah-panel relative">
             {#if it.cover}<img src={it.cover} alt="" loading="lazy" class="w-full h-full object-cover" referrerpolicy="no-referrer" />{/if}
             {#if it.imported_model_id}<span class="chip live absolute top-2 left-2">In hub</span>{/if}
             {#if it.needs_parts}<span class="chip absolute top-2 right-2" style="background:var(--panel)">Needs hardware</span>{/if}
@@ -107,7 +104,7 @@
             <div class="text-xs muted truncate">{it.creator}</div>
             <div class="flex items-center gap-1.5 mt-1.5 text-xs">
               <span class="chip {lc.cls}" title={it.license_label}>{lc.label}</span>
-              <span class="muted ml-auto">⬇ {fmtN(it.downloads)}</span>
+              <span class="muted ml-auto inline-flex items-center gap-1"><Glyph name="download" size={13} label="Downloads" />{fmtN(it.downloads)}</span>
             </div>
           </div>
         </button>
@@ -127,3 +124,4 @@
     </div>
   {/if}
 </div>
+</Page>

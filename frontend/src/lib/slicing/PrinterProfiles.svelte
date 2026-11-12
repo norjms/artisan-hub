@@ -147,8 +147,7 @@
   const known = $derived(new Set((st?.profiles || []).map((p) => (p.wt_printer || p.name).toLowerCase())));
 </script>
 
-<h1 class="text-2xl font-bold mb-1">Printers</h1>
-<p class="muted text-sm mb-5 max-w-3xl">Each printer is sliced with OrcaSlicer or PrusaSlicer, starting from that slicer's preset for the
+<p class="ah-secondary" style="flex:none">Printer profiles for slicing. Each printer is sliced with OrcaSlicer or PrusaSlicer, starting from that slicer's preset for the
   printer (or one you import), then each model's recommended layer height, walls, infill and supports, then your own overrides.</p>
 
 {#if st}
@@ -156,16 +155,16 @@
     <div class="panel p-5 text-sm">No slicer service is set up. The hub operator sets a shared one (HUB_SLICER_URL), or your team can
       connect its own on <a class="underline" href="/connections">Connections</a>.</div>
   {:else}
-    <div class="panel p-4 mb-4 flex flex-wrap items-center gap-3 text-sm">
+    <div class="panel p-4 flex flex-wrap items-center gap-3 text-sm" style="flex:none">
       {#if st.health?.ok}
         <span class="chip ok">Slicer online</span>
-        <span class="muted">{Object.entries(st.engines || {}).map(([k, v]) => `${ENGINE[k] || k} ${v}`).join(' · ')} · {st.health.busy}/{st.health.slots} busy · {st.source === 'team' ? "your team's slicer" : 'shared slicer'}</span>
+        <span class="muted">{Object.entries(st.engines || {}).map(([k, v]) => `${ENGINE[k] || k} ${v}`).join(', ')}, {st.health.busy} of {st.health.slots} busy, {st.source === 'team' ? "your team's slicer" : 'shared slicer'}</span>
       {:else}<span class="chip bad">Slicer offline</span><span class="muted">{st.health?.error}</span>{/if}
       {#if can('slice')}<button class="btn sm primary ml-auto" onclick={() => start()}>Add printer</button>{/if}
     </div>
 
     {#if found.filter((f) => !known.has((f.name || '').toLowerCase())).length && can('slice')}
-      <div class="panel p-4 mb-4 text-sm">
+      <div class="panel p-4 text-sm" style="flex:none">
         <div class="font-semibold mb-2">Printers your print farm reports</div>
         <div class="flex flex-wrap gap-2">
           {#each found.filter((f) => !known.has((f.name || '').toLowerCase())) as f}
@@ -208,7 +207,7 @@
         <p class="mb-3">Which slicer should the hub use for this printer?</p>
         <div class="grid sm:grid-cols-2 gap-3">
           {#each Object.entries(st.engines || {}) as [k, v]}
-            <label class="panel p-4 cursor-pointer flex gap-3 {edit.engine === k ? 'ring-2 ring-brand-600' : ''}">
+            <label class="panel p-4 cursor-pointer flex gap-3 {edit.engine === k ? 'ring-2 ring-ah-accent' : ''}">
               <input type="radio" bind:group={edit.engine} value={k} onchange={() => { edit.machine_preset = ''; edit.machine_config = null; machines = []; }} />
               <div><b>{ENGINE[k] || k}</b> <span class="muted">{v}</span>
                 <div class="muted text-xs mt-1">{k === 'prusa' ? "Prusa's own profiles, including toolchangers like the CORE One INDX." : 'Bambu, Prusa, Voron, Creality, Qidi and many more.'}</div></div>
@@ -222,7 +221,7 @@
         <input id="ms" class="input" bind:value={q} oninput={search} placeholder="CORE One INDX, H2D, MK4S, Voron 2.4 350…" />
         <div class="mt-2 max-h-72 overflow-auto border line rounded-lg">
           {#each machines as mc}
-            <button class="block w-full text-left px-3 py-2 hover:bg-black/5 dark:hover:bg-white/5 {edit.machine_preset === mc.name ? 'font-semibold' : ''}" onclick={() => pick(mc.name)}>
+            <button class="block w-full text-left px-3 py-2 hover:bg-ah-segment {edit.machine_preset === mc.name ? 'font-semibold' : ''}" onclick={() => pick(mc.name)}>
               {mc.name}<span class="muted text-xs"> · {mc.vendor || ''}{(mc.tools || mc.extruders) > 1 ? ` · ${mc.tools || mc.extruders} tools` : ''}</span></button>
           {:else}<div class="muted p-3">{searching ? 'Searching…' : 'Type to search.'}</div>{/each}
         </div>

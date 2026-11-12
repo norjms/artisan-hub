@@ -1,5 +1,10 @@
 <script>
+  import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
+  import { Icon } from 'artisanhub-ui';
+  import Glyph from '$lib/Glyph.svelte';
   import { api, fmtTime, ago } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
   import { can } from '$lib/session.svelte.js';
@@ -9,7 +14,18 @@
   import Filament from '$lib/farm/Filament.svelte';
   import Alarms from '$lib/farm/Alarms.svelte';
 
-  let view = $state('checks');
+  const VIEWS = { printers: ['Printers', 'Every printer in the farm. Click one to control it.'], cameras: ['Cameras', "A frame from each printer's camera, every 10 seconds."],
+    queue: ['Print queue', 'Jobs waiting and printing, as the hub sees them.'], filament: ['Filament', 'What is loaded in each printer, and the spools the farm knows.'] };
+  let view = $state(page.url.searchParams.get('view') || 'checks');
+  // The sidebar links here with ?view=; follow it when the same page is opened with another view.
+  $effect(() => { const v = page.url.searchParams.get('view') || 'checks'; if (v !== view) { view = v; if (v === 'settings') loadSettings(); if (v === 'history') loadStats(); } });
+  function pick(k) {
+    view = k; if (k === 'settings') loadSettings(); if (k === 'history') loadStats();
+    goto(k === 'checks' ? '/farm' : `/farm?view=${k}`, { replaceState: true, noScroll: true, keepFocus: true });
+  }
+  let tick = $state(Date.now());
+  const shot = (p) => `/api/mobile/v1/printers/${encodeURIComponent(p.name)}/snapshot?t=${tick}`;
+  let noCam = $state({});
   let d = $state(null);
   let busy = $state(false);
   let failing = $state(null);   // check id with the fail form open
@@ -38,7 +54,11 @@
     await saveSettings({ order_routing: v }, 'Order routing changed');
   }
 
-  async function load() { d = await api.get('/api/farm'); loadHidden(); loadAlarmSummary(); }
+  let loadErr = $state('');
+  async function load() {
+    try { d = await api.get('/api/farm'); loadErr = ''; } catch (e) { loadErr = e.message || String(e); return; }
+    loadHidden(); loadAlarmSummary();
+  }
   // Alarm feed counts for the tab label (farms with the alarms capability)
   let alarmSum = $state(null);
   async function loadAlarmSummary() {
@@ -128,7 +148,7 @@
     } finally { busy = false; }
   }
   async function skip(c) {
-    if (!confirm(`Dismiss the plate check for ${c.printer} without recording anything? The printer stays as it is in Legacy farm.`)) return;
+    if (!confirm(`Dismiss the plate check for ${c.printer} without recording anything? The printer stays as it is in ${farmName}.`)) return;
     await attempt(() => api.post(`/api/plate-checks/${c.id}/skip`)); await load();
   }
   async function retryReady(c) {
@@ -148,29 +168,68 @@
   onMount(() => {
     load();
     const t = setInterval(load, 30000);
-    return () => clearInterval(t);
+    const c = setInterval(() => { if (view === 'cameras') tick = Date.now(); }, 10000);
+    return () => { clearInterval(t); clearInterval(c); };
   });
 </script>
 
-<div class="flex flex-wrap items-end gap-3 mb-4">
-  <div class="mr-auto">
-    <h1 class="text-2xl font-bold">Farm</h1>
-    <p class="muted text-sm">{d?.farm_label || 'The farm'}'s queue as the hub sees it, and a plate check after every print. Passing a plate sets the printer Ready in {farmName}. Click a printer to control it.</p>
-  </div>
-  {#if d}<span class="text-xs muted">{d.synced_at ? `synced ${ago(d.synced_at)}` : 'not synced yet'}</span>{/if}
-  {#if can('farm')}<button class="btn" disabled={busy} onclick={sync}>Sync now</button>{/if}
-</div>
+<Page title={VIEWS[view]?.[0] || 'Farm overview'} description={VIEWS[view]?.[1] || `${d?.farm_label || 'The farm'}'s queue as the hub sees it, and a plate check after every print. Passing a plate sets the printer Ready in ${farmName}. Click a printer to control it.`}>
+{#snippet actions()}
+  {#if d}<span class="ah-muted">{d.synced_at ? `Synced ${ago(d.synced_at)}` : 'Not synced yet'}</span>{/if}
+  {#if can('farm')}<button class="btn" disabled={busy} onclick={sync}><Icon name="sync" size={16} />Sync now</button>{/if}
+{/snippet}
 
 {#if d}
-  <div class="flex flex-wrap gap-2 mb-4">
+  <div class="ah-tabs" role="tablist" aria-label="Farm">
+    {#each [['checks', `Plate checks${d.checks.length ? ` (${d.checks.length})` : ''}`], ...(has('alarms') ? [['alarms', `Alarms${alarmSum?.active ? ` (${alarmSum.active})` : ''}`]] : []), ['printers', 'Printers'], ['cameras', 'Cameras'], ['queue', `Queue (${d.queue.length})`], ['timeline', 'Timeline'], ['maintenance', 'Maintenance'], ['plates', 'Build plates'], ['filament', 'Filament'], ['history', 'History'], ['search', 'Search'], ['settings', 'Settings']] as [k, l]}
+      <button role="tab" aria-selected={view === k} onclick={() => pick(k)}>{l}</button>
+    {/each}
+  </div>
+  {#if view !== 'printers' && view !== 'cameras'}
+  <div class="flex flex-wrap gap-2">
     {#each d.printers as p}
       <button class="chip {p.out_of_service ? 'bad' : p.busy ? 'live' : !p.online ? '' : p.ready ? 'ok' : 'warn'} {sel === p.name ? 'ring-2' : ''}" title={p.state}
               onclick={() => (sel = sel === p.name ? null : p.name)}>
-        {p.name}: {!p.online ? 'offline' : p.error ? 'error' : p.busy ? `printing${p.progress != null ? ` ${Math.round(p.progress)}%` : ''}` : p.ready ? 'Ready' : 'needs plate cleared'}{p.out_of_service ? ' · out of service' : ''}{#if p.mx_due?.length}<span class="ml-1" style="color:#d4a017" title="Maintenance due: {p.mx_due.map((m) => m.message).join('; ')}">🔧</span>{/if}
+        {p.name}: {!p.online ? 'offline' : p.error ? 'error' : p.busy ? `printing${p.progress != null ? ` ${Math.round(p.progress)}%` : ''}` : p.ready ? 'Ready' : 'needs plate cleared'}{p.out_of_service ? ', out of service' : ''}{#if p.mx_due?.length}<span title="Maintenance due: {p.mx_due.map((m) => m.message).join('; ')}"><Glyph name="wrench" size={13} label="Maintenance due" /></span>{/if}
       </button>
     {/each}
-    {#if d.printers_error}<span class="chip bad">printers: {d.printers_error}</span>{/if}
+    {#if d.printers_error}<span class="chip bad">Printers: {d.printers_error}</span>{/if}
   </div>
+  {/if}
+  {#if view === 'printers'}
+    {#if d.printers_error}<div class="ah-banner ah-banner--bad">Printers: {d.printers_error}</div>{/if}
+    <div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+      {#each d.printers as p (p.name)}
+        {@const st = p.out_of_service ? ['bad', 'Out of service'] : !p.online ? ['', 'Offline'] : p.error ? ['bad', 'Error'] : p.busy ? ['live', (p.state || '').includes('pause') ? 'Paused' : 'Printing'] : p.ready ? ['ok', 'Ready'] : ['warn', 'Needs the plate cleared']}
+        <button class="ah-glass ah-card" style="text-align:left;cursor:pointer;color:inherit;font:inherit;{sel === p.name ? 'border-color:var(--ah-accent)' : ''}" onclick={() => (sel = sel === p.name ? null : p.name)}>
+          <div class="flex items-center gap-[10px]"><div class="ah-icon-tile"><Icon name="printer" /></div>
+            <div style="flex:1;min-width:0"><div class="ah-card-title">{p.name}</div><div class="ah-muted">{p.model || ''}</div></div>
+            <span class="chip {st[0]}">{st[1]}</span></div>
+          <div class="flex items-center gap-[10px] ah-muted"><span class="truncate">{p.busy ? p.job || 'Printing' : p.ready ? 'Ready for the next job' : !p.online ? 'Not reachable' : 'Waiting for the plate to be cleared'}</span>
+            <span class="ah-num" style="margin-left:auto">{p.busy && p.progress != null ? `${Math.round(p.progress)}%` : ''}</span></div>
+          <div class="ah-progress{st[0] === 'warn' ? ' ah-progress--attention' : ''}"><i style="width:{p.busy ? Math.round(p.progress || 0) : 0}%"></i></div>
+          <div class="flex gap-4 ah-muted ah-num">
+            {#if p.nozzle_temp != null}<span>Nozzle {Math.round(p.nozzle_temp)}°C</span>{/if}
+            {#if p.bed_temp != null}<span>Bed {Math.round(p.bed_temp)}°C</span>{/if}
+            {#if p.busy && p.eta_minutes != null}<span style="margin-left:auto">{fmtTime(p.eta_minutes * 60)} left</span>{/if}
+          </div>
+        </button>
+      {:else}<div class="panel ah-muted" style="padding:24px;grid-column:1/-1;text-align:center">The farm reports no printers yet.</div>{/each}
+    </div>
+  {:else if view === 'cameras'}
+    <div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(380px,1fr))">
+      {#each d.printers as p (p.name)}
+        <section class="ah-glass ah-card">
+          <div class="flex items-center gap-[10px]"><span class="ah-card-title" style="flex:1">{p.name}</span>
+            <span class="chip {p.busy ? 'live' : p.online ? 'ok' : ''}">{p.busy ? `Printing${p.progress != null ? ` ${Math.round(p.progress)}%` : ''}` : p.online ? 'Idle' : 'Offline'}</span></div>
+          <div class="panel" style="padding:0;overflow:hidden;aspect-ratio:16/9;display:grid;place-items:center">
+            {#if noCam[p.name]}<span class="ah-muted">No camera frame from {p.name}</span>
+            {:else}<img src={shot(p)} alt="Camera on {p.name}" style="width:100%;height:100%;object-fit:cover" onerror={() => (noCam = { ...noCam, [p.name]: true })} />{/if}
+          </div>
+        </section>
+      {:else}<div class="panel ah-muted" style="padding:24px;grid-column:1/-1;text-align:center">The farm reports no printers yet.</div>{/each}
+    </div>
+  {/if}
   {#if hiddenCodes.length}
     <details class="mb-4 text-sm"><summary class="muted cursor-pointer">{hiddenCodes.length} printer code{hiddenCodes.length === 1 ? '' : 's'} hidden as nuisances</summary>
       <ul class="mt-2 space-y-1">{#each hiddenCodes as c (c.code)}<li class="flex items-center gap-2"><span class="font-mono text-xs">{c.code}</span><span class="flex-1">{c.message || 'no description'} <span class="muted">({c.printer || 'every printer'}, by {c.by})</span></span>{#if can('farm')}<button class="btn sm" onclick={() => unhideCode(c)}>Show again</button>{/if}</li>{/each}</ul>
@@ -196,7 +255,7 @@
         <div class="text-sm text-red-600">Printer error: {p.error_message || p.error} <span class="muted font-mono text-xs">({p.error})</span></div>
         {#if can('farm')}<div class="flex gap-2"><button class="btn sm" onclick={() => hideCode(p, false)}>Hide this code on {p.name}</button><button class="btn sm" onclick={() => hideCode(p, true)}>Hide on every printer</button></div>{/if}
       {/if}
-      {#each p.mx_due || [] as m}<div class="text-sm" style="color:#b8860b">🔧 Maintenance due: {m.message} It is on the Maintenance tab.</div>{/each}
+      {#each p.mx_due || [] as m}<div class="text-sm flex items-center gap-2" style="color:var(--ah-chip-warn-text)"><Glyph name="wrench" size={14} />Maintenance due: {m.message} It is on the Maintenance tab.</div>{/each}
       {#if !p.error && p.last_result}<div class="text-xs muted">Last job {p.last_result}; the alarm has been cleared.</div>{/if}
       {#if p.out_of_service}<div class="text-sm text-amber-600">Out of service{p.out_of_service_reason ? `: ${p.out_of_service_reason}` : ''}. It gets no new jobs.</div>{/if}
       {#if can('farm') && p.online}
@@ -229,20 +288,15 @@
           {/if}
         </div>
         <div class="flex flex-wrap gap-3 text-xs">
-          <button class="underline" onclick={() => (view = 'plates')}>Build plate</button>
-          <button class="underline" onclick={() => (view = 'filament')}>Filament</button>
-          <button class="underline" onclick={() => (view = 'maintenance')}>Maintenance</button>
-          <button class="underline" onclick={() => (view = 'queue')}>Queue</button>
+          <button class="underline" onclick={() => pick('plates')}>Build plate</button>
+          <button class="underline" onclick={() => pick('filament')}>Filament</button>
+          <button class="underline" onclick={() => pick('maintenance')}>Maintenance</button>
+          <button class="underline" onclick={() => pick('queue')}>Queue</button>
         </div>
       {/if}
     </div>
   {/each}
 
-  <div class="flex border-b mb-4" style="border-color: var(--line)">
-    {#each [['checks', `Plate checks${d.checks.length ? ` (${d.checks.length})` : ''}`], ...(has('alarms') ? [['alarms', `Alarms${alarmSum?.active ? ` (${alarmSum.active})` : ''}`]] : []), ['queue', `Queue (${d.queue.length})`], ['timeline', 'Timeline'], ['maintenance', 'Maintenance'], ['plates', 'Build plates'], ['filament', 'Filament'], ['history', 'History'], ['search', 'Search'], ['settings', 'Settings']] as [k, l]}
-      <button class="px-4 py-2.5 text-sm font-semibold border-b-2 {view === k ? 'border-brand-600' : 'border-transparent muted'}" onclick={() => { view = k; if (k === 'settings') loadSettings(); if (k === 'history') loadStats(); }}>{l}</button>
-    {/each}
-  </div>
 
   {#if view === 'checks'}
     {#if !d.plate_checks_on}
@@ -323,7 +377,7 @@
   {:else if view === 'filament'}
     <Filament printers={d.printers} />
   {:else if view === 'settings'}
-    {#if !st}<p class="muted">Loading...</p>{:else}
+    {#if !st}<p class="ah-muted">Loading...</p>{:else}
       {@const edit = can('settings')}
       <div class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))">
         <div class="panel p-4 flex flex-col gap-3">
@@ -442,6 +496,9 @@
       </table>
     </div>
   {/if}
+{:else if loadErr}
+  <div class="ah-banner ah-banner--bad">The farm did not answer: {loadErr}</div>
 {:else}
-  <p class="muted">Loading...</p>
+  <p class="ah-muted">Loading...</p>
 {/if}
+</Page>

@@ -1,4 +1,5 @@
 <script>
+  import { farmName, FarmName } from '$lib/nav.svelte.js';
   import { onMount } from 'svelte';
   import { api, fmtBytes, fmtTime } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
@@ -34,7 +35,7 @@
     try { await attempt(() => api.upload(`/api/models/${m.id}/files`, files), 'Uploaded'); await done(); } finally { busy = false; }
   }
   async function setPrint(f, v) {
-    await attempt(() => api.patch(`/api/files/${f.id}`, { is_print_file: v }), v ? 'Marked for production. Legacy farm will get it.' : 'Unmarked');
+    await attempt(() => api.patch(`/api/files/${f.id}`, { is_print_file: v }), v ? `Marked for production. ${FarmName()} will get it.` : 'Unmarked');
     await done();
   }
   async function useOn(f) {
@@ -51,7 +52,7 @@
   }
   async function del(f) {
     const users = (usedBy[f.id] || []).map((p) => p.printer);
-    const msg = `Delete ${f.filename} for good? It goes from the library${f.legacy_farm_uuid ? ' and Legacy farm' : ''}.`
+    const msg = `Delete ${f.filename} for good? It goes from the library${f.legacy_farm_uuid ? ` and ${farmName()}` : ''}.`
       + (users.length ? `\n\n${users.join(', ')} ${users.length === 1 ? 'prints' : 'print'} it now and will have nothing approved.` : '')
       + (f.is_print_file ? '\n\nIt is the production file: store orders will have nothing to print until another file is chosen.' : '');
     if (!confirm(msg)) return;
@@ -105,7 +106,7 @@
                   <option value="">Print on…</option>
                   {#each sl.printers as p}
                     {@const mine = (usedBy[f.id] || []).some((u) => u.profile_id === p.profile_id && u.approved)}
-                    <option value={p.profile_id}>{p.printer}{p.is_default ? ' (default)' : ''}{mine ? (p.locked ? ' ✓' : ' ✓ (lock it)') : p.has_approved ? ' (replaces its file)' : ''}</option>
+                    <option value={p.profile_id}>{p.printer}{p.is_default ? ' (default)' : ''}{mine ? (p.locked ? ' (in use)' : ' (in use, lock it)') : p.has_approved ? ' (replaces its file)' : ''}</option>
                   {/each}
                 </select>
               {/if}
@@ -113,7 +114,7 @@
             <td>
               {#if sliced(f)}
                 <button class="toggle {f.is_print_file ? 'on' : ''}" aria-label="Production file" onclick={() => setPrint(f, !f.is_print_file)}></button>
-                {#if f.legacy_farm_uuid}<div class="text-[10px] muted mt-1">in Legacy farm</div>{/if}
+                {#if f.legacy_farm_uuid}<div class="text-[11px] muted mt-1">In {farmName()}</div>{/if}
               {/if}
             </td>
             <td class="whitespace-nowrap">

@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.test_setup_api import TOKEN, _set, new_install  # noqa: F401  (fixture)
-from tests.test_teams import as_user, real_auth, two_teams  # noqa: F401  (fixtures)
+from tests.test_teams import as_user, people, real_auth  # noqa: F401  (fixtures)
 
 
 class FakeLldap:
@@ -53,8 +53,8 @@ def lldap(monkeypatch):
     return fake
 
 
-def test_an_invite_to_someone_without_a_login_makes_one_and_a_password_link(two_teams, real_auth, lldap):
-    owner = as_user(two_teams["owner"], two_teams["t2"])
+def test_an_invite_to_someone_without_a_login_makes_one_and_a_password_link(people, real_auth, lldap):
+    owner = as_user(people["owner"])
     r = owner.post("/api/team/invites", json={"email": "newbie@c.example", "role": "member"})
     assert r.status_code == 200, r.text
     body = r.json()
@@ -76,15 +76,15 @@ def test_an_invite_to_someone_without_a_login_makes_one_and_a_password_link(two_
     assert anyone.get("/" + path).status_code == 410
 
 
-def test_someone_with_a_login_just_joins_the_hub_users_group(two_teams, real_auth, lldap):
-    owner = as_user(two_teams["owner"], two_teams["t2"])
+def test_someone_with_a_login_just_joins_the_hub_users_group(people, real_auth, lldap):
+    owner = as_user(people["owner"])
     r = owner.post("/api/team/invites", json={"email": "known@c.example", "role": "viewer"})
     assert r.json()["account"] == "existing" and r.json()["signup_url"] is None
     assert lldap.users["existing"]["groups"] == {"hub-users"}
 
 
-def test_a_cancelled_invite_removes_the_login_nobody_finished(two_teams, real_auth, lldap):
-    owner = as_user(two_teams["owner"], two_teams["t2"])
+def test_a_cancelled_invite_removes_the_login_nobody_finished(people, real_auth, lldap):
+    owner = as_user(people["owner"])
     r = owner.post("/api/team/invites", json={"email": "never@c.example", "role": "member"})
     invite_id = r.json()["invite"]["id"]
     assert owner.delete(f"/api/team/invites/{invite_id}").status_code == 200

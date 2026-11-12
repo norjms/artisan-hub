@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.test_lldap import FakeLldap
-from tests.test_teams import as_user, real_auth, two_teams  # noqa: F401  (fixtures)
+from tests.test_teams import as_user, people, real_auth  # noqa: F401  (fixtures)
 
 SENT = "If that account exists, a link is on its way. It works once, for 30 minutes."
 
@@ -189,7 +189,7 @@ def test_the_access_log_never_shows_a_link():
     assert "AbCdEfGhIjKlMnOpQrStUvWxYz012345" not in line and "/account/password/***" in line
 
 
-def test_the_hubs_owner_makes_a_link_from_people(two_teams, real_auth, lldap, mail):
+def test_the_hubs_owner_makes_a_link_from_people(people, real_auth, lldap, mail):
     from app.db import session_scope
     from app.models import Membership, User
     from app.tenant import unscoped
@@ -198,13 +198,13 @@ def test_the_hubs_owner_makes_a_link_from_people(two_teams, real_auth, lldap, ma
         boss = User(sub=f"boss-{tag}", email=f"boss-{tag}@shop.example", name="Hub Owner", platform_admin=True)
         db.add(boss)
         db.flush()
-        db.add(Membership(team_id=two_teams["t2"], user_id=boss.id, role="member"))
+        db.add(Membership(team_id=1, user_id=boss.id, role="member"))
         boss_id = boss.id
-    lldap.users["outsider"] = {"id": "outsider", "email": two_teams["outsider_email"], "groups": {"hub-users"}}
-    r = as_user(boss_id, two_teams["t2"]).post(f"/api/account/password-link/{two_teams['outsider']}")
+    lldap.users["outsider"] = {"id": "outsider", "email": people["outsider_email"], "groups": {"hub-users"}}
+    r = as_user(boss_id).post(f"/api/account/password-link/{people['outsider']}")
     assert r.status_code == 200, r.text
     assert r.json()["user"] == "outsider" and r.json()["expires_in_minutes"] == 30
     assert _client().get(_path(r.json()["link"])).status_code == 200
     # A team owner is not the hub's owner.
-    team_owner = as_user(two_teams["owner"], two_teams["t2"])
-    assert team_owner.post(f"/api/account/password-link/{two_teams['outsider']}").status_code == 403
+    team_owner = as_user(people["owner"])
+    assert team_owner.post(f"/api/account/password-link/{people['outsider']}").status_code == 403

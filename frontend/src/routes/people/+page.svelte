@@ -64,7 +64,8 @@
   let users = $state([]);
   let invites = $state([]);
   let edit = $state(null);
-  let add = $state({ email: '', name: '', mode: 'team', team_name: '', team_id: null, role: 'member', custom: false, perms: [] });
+  // An installation has one team: everyone added joins it, with the role chosen.
+  let add = $state({ email: '', name: '', role: 'member', custom: false, perms: [] });
   let hubSent = $state(null);
   async function loadHub() {
     data = await api.get('/api/platform/teams');
@@ -78,12 +79,11 @@
   }
   function addRoleChanged() { add.perms = [...(t?.role_perms?.[add.role] || [])]; }
   async function addPerson() {
-    const b = { email: add.email, name: add.name || null, mode: add.mode };
-    if (add.mode === 'team') b.team_name = add.team_name;
-    if (add.mode === 'join') { b.team_id = add.team_id; b.role = add.role; if (add.custom && add.role !== 'owner') b.perms = add.perms; }
+    const b = { email: add.email, name: add.name || null, role: add.role };
+    if (add.custom && add.role !== 'owner') b.perms = add.perms;
     hubSent = await attempt(() => api.post('/api/platform/people', b));
     toast(hubSent.emailed ? `Invite emailed to ${add.email}` : 'Invite ready: send them the link below');
-    add = { email: '', name: '', mode: add.mode, team_name: '', team_id: add.team_id, role: 'member', custom: false, perms: [] };
+    add = { email: '', name: '', role: 'member', custom: false, perms: [] };
     loadHub();
   }
   async function cancelHub(i) { await attempt(() => api.del(`/api/platform/invites/${i.id}`), 'Invite cancelled'); loadHub(); }
@@ -98,7 +98,7 @@
     pwLink = { ...r, name: u.name };
   }
   const teamName = (id) => data?.teams.find((x) => x.id === id)?.name || `#${id}`;
-  const canSubmit = $derived(add.email && (add.mode !== 'team' || add.team_name.trim()) && (add.mode !== 'join' || add.team_id));
+  const canSubmit = $derived(!!add.email);
 
   onMount(() => { load(); if (view === 'hub') loadHub(); });
 </script>
@@ -193,35 +193,18 @@
   {:else if data}
     <section class="ah-glass ah-card" style="flex:none">
       <h2 class="ah-card-title">Add a person</h2>
-      <p class="ah-muted" style="margin-top:-6px">Only the hub owner sees this. Adding someone here gives them a hub sign-in: an account in the hub's user directory (LLDAP), used through the Authelia sign-in, or access for the account they already have. Team owners can then invite people into their own team.</p>
+      <p class="ah-muted" style="margin-top:-6px">Only the hub owner sees this. Adding someone here gives them a hub sign-in: an account in the hub's user directory (LLDAP), used through the Authelia sign-in, or access for the account they already have. Everyone added joins this hub's team, with the role you choose.</p>
       <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); addPerson(); }}>
         <div class="flex gap-3">
           <input class="input" type="email" required placeholder="name@example.com" bind:value={add.email} aria-label="Email" />
           <input class="input" placeholder="Name" bind:value={add.name} aria-label="Name" />
         </div>
-        <fieldset class="grid gap-2" style="grid-template-columns:repeat(3,minmax(0,1fr));border:0;padding:0;margin:0">
-          <legend class="sr-only">How to add them</legend>
-          {#each [['team', 'As a team', 'They own a new team and can invite their own people.'], ['individual', 'As an individual', 'Their own private workspace.'], ['join', 'Into an existing team', 'They join a team with the role you choose.']] as [v, label, help]}
-            <label class="panel" style="padding:10px 14px;cursor:pointer;{add.mode === v ? 'border-color:var(--ah-accent)' : ''}">
-              <input type="radio" name="mode" value={v} bind:group={add.mode} /> <b>{label}</b>
-              <div class="ah-muted">{help}</div>
-            </label>
-          {/each}
-        </fieldset>
-        {#if add.mode === 'team'}
-          <input class="input" required placeholder="Team name" bind:value={add.team_name} maxlength="120" aria-label="Team name" />
-        {:else if add.mode === 'join'}
-          <div class="flex gap-3">
-            <select class="input" bind:value={add.team_id} required aria-label="Team">
-              <option value={null} disabled>Choose a team</option>
-              {#each data.teams as x}<option value={x.id}>{x.name}</option>{/each}
-            </select>
-            <select class="input" style="width:12rem" bind:value={add.role} onchange={addRoleChanged} aria-label="Role">{#each ROLES as r}<option value={r}>{ROLE_LABEL[r]}</option>{/each}</select>
-          </div>
-          {#if add.role !== 'owner' && t}
-            <label class="flex items-center gap-2"><input type="checkbox" bind:checked={add.custom} onchange={addRoleChanged} /> Choose permissions instead of the role's defaults</label>
-            {#if add.custom}<PermPicker catalog={t.perm_catalog} bind:value={add.perms} allowed={Object.keys(t.perm_catalog)} />{/if}
-          {/if}
+        <div class="flex gap-3">
+          <select class="input" style="width:12rem" bind:value={add.role} onchange={addRoleChanged} aria-label="Role">{#each ROLES as r}<option value={r}>{ROLE_LABEL[r]}</option>{/each}</select>
+        </div>
+        {#if add.role !== 'owner' && t}
+          <label class="flex items-center gap-2"><input type="checkbox" bind:checked={add.custom} onchange={addRoleChanged} /> Choose permissions instead of the role's defaults</label>
+          {#if add.custom}<PermPicker catalog={t.perm_catalog} bind:value={add.perms} allowed={Object.keys(t.perm_catalog)} />{/if}
         {/if}
         <button class="btn primary" style="align-self:flex-start" disabled={!canSubmit}>Add and create invite</button>
       </form>
@@ -240,7 +223,7 @@
         <table class="grid"><thead><tr><th>Person</th><th>Into</th><th>Role</th><th>Sent</th><th></th></tr></thead><tbody>
           {#each invites as i}
             <tr><td>{i.name || i.email}<div class="ah-muted">{i.email}{i.needs_account ? ', no login yet' : ''}</div></td>
-              <td>{i.kind === 'new_team' ? 'New team: ' : ''}{i.team}</td><td>{ROLE_LABEL[i.role]}</td>
+              <td>{i.team}</td><td>{ROLE_LABEL[i.role]}</td>
               <td class="ah-muted">{i.expired ? 'Expired' : ago(i.created_at)}</td>
               <td style="text-align:right"><button class="btn sm ghost" onclick={() => cancelHub(i)}>Cancel invite</button></td></tr>
           {/each}
@@ -248,10 +231,10 @@
       </section>
     {/if}
     <section class="ah-glass ah-card" style="flex:none">
-      <h2 class="ah-card-title">Teams</h2>
+      <h2 class="ah-card-title">The team</h2>
       <table class="grid"><thead><tr><th>Team</th><th>Members</th><th>Models</th><th>Server folders</th><th>Created</th><th></th></tr></thead><tbody>
         {#each data.teams as x}
-          <tr><td>{x.name}{#if x.personal} <span class="chip">Individual</span>{/if}<div class="ah-muted">{x.slug}</div></td>
+          <tr><td>{x.name}<div class="ah-muted">{x.slug}</div></td>
             <td>{x.members}</td><td>{x.models}</td>
             <td>{#if x.source_dirs.deltaprints}<div>DeltaPrints: {x.source_dirs.deltaprints}</div>{/if}{#if x.source_dirs.inbox}<div>Inbox: {x.source_dirs.inbox}</div>{/if}{#if !x.source_dirs.deltaprints && !x.source_dirs.inbox}<span class="ah-muted">None</span>{/if}</td>
             <td class="ah-muted">{ago(x.created_at)}</td>

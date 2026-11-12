@@ -106,16 +106,17 @@ def test_owner_provisioning():
     assert c.get("/api/mobile/v1/owner/teams", headers=H(plain)).status_code == 403
     assert c.get("/api/mobile/v1/owner/teams", headers=H(okey)).status_code == 200
     _, member_email = _user(admin=False)
+    # An installation has one team (B25): there is none to make, and the owner works with the one there is.
     r = c.post("/api/mobile/v1/owner/teams", json={"name": "Shop B " + _s.token_hex(2), "owner_email": member_email}, headers=H(okey))
-    assert r.status_code == 200, r.text
-    tid = r.json()["id"]
-    m = c.get(f"/api/mobile/v1/owner/teams/{tid}/members", headers=H(okey)).json()["members"]
-    assert [x["role"] for x in m] == ["owner"]
-    k = c.post(f"/api/mobile/v1/owner/teams/{tid}/keys", json={"name": "B app", "scopes": ["write"], "expires_in_days": 7},
+    assert r.status_code == 410 and "one team" in r.json()["detail"]
+    assert [t["id"] for t in c.get("/api/mobile/v1/owner/teams", headers=H(okey)).json()["teams"]][:1] == [1]
+    m = c.get("/api/mobile/v1/owner/teams/1/members", headers=H(okey)).json()["members"]
+    assert m and all("role" in x for x in m)
+    k = c.post("/api/mobile/v1/owner/teams/1/keys", json={"name": "A app", "scopes": ["write"], "expires_in_days": 7},
                headers=H(okey)).json()
     me = c.get("/api/mobile/v1/me", headers=H(k["key"], "b1")).json()
-    assert me["team"]["id"] == tid and "farm" in me["perms"]
-    assert c.post(f"/api/mobile/v1/owner/teams/{tid}/keys", json={"name": "x", "scopes": ["owner"]}, headers=H(okey)).status_code == 400
+    assert me["team"]["id"] == 1 and "farm" in me["perms"]
+    assert c.post("/api/mobile/v1/owner/teams/1/keys", json={"name": "x", "scopes": ["owner"]}, headers=H(okey)).status_code == 400
 
 
 class _Spool(BaseHTTPRequestHandler):

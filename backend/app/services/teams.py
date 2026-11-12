@@ -31,7 +31,15 @@ def unique_slug(db: Session, name: str) -> str:
     return slug
 
 
+# An installation serves one team: everyone who uses the hub works in it, and there is no way to make another.
+# The team columns and the automatic filtering by team stay, as a safety net around every query.
+ONE_TEAM = 1
+ONE_TEAM_ONLY = "an installation has one team: people join it"
+
+
 def create_team(db: Session, name: str, owner: User | None = None, personal: bool = False) -> Team:
+    """A further team. Nothing in the hub makes one any more (an installation has one team); the tests use it
+    to check that rows of different teams never mix."""
     t = Team(name=name.strip()[:120] or "Team", slug=unique_slug(db, name), personal=personal, source_dirs={})
     db.add(t)
     db.flush()
@@ -84,24 +92,14 @@ def user_teams(db: Session, user: User) -> list[dict]:
 
 
 def pick_team(db: Session, user: User, wanted: str | int | None, session_team: int | None) -> tuple[Team, Membership] | None:
-    """The team a request acts on: the asked-for one (id or slug), else the session's, else the last used, else any."""
-    cands = []
-    if wanted not in (None, ""):
-        w = str(wanted)
-        t = db.get(Team, int(w)) if w.isdigit() else db.execute(select(Team).where(Team.slug == w)).scalar()
-        if not t:
-            return None
-        m = membership(db, t.id, user.id)
-        return (t, m) if m else None
-    for tid in (session_team, user.last_team_id):
-        if tid:
-            cands.append(tid)
-    for tid in cands:
-        m = membership(db, tid, user.id)
-        if m:
-            return db.get(Team, tid), m
-    m = db.execute(select(Membership).where(Membership.user_id == user.id).order_by(Membership.id)).scalar()
-    return (db.get(Team, m.team_id), m) if m else None
+    """The installation's one team, when this person is in it. A team asked for (by id or slug) must be that one."""
+    t = db.get(Team, ONE_TEAM)
+    if not t:
+        return None
+    if wanted not in (None, "") and str(wanted) not in (str(t.id), t.slug):
+        return None
+    m = membership(db, t.id, user.id)
+    return (t, m) if m else None
 
 
 # ---------- permissions ----------
@@ -149,17 +147,13 @@ def _valid_email(email: str) -> str:
 
 def create_invite(db: Session, team_id: int | None, email: str, role: str, by: User | None, *, kind: str = "join",
                   team_name: str | None = None, name: str | None = None, perms: list[str] | None = None) -> tuple[str, Invite]:
-    if kind not in ("join", "new_team", "individual"):
-        raise ValueError("unknown invite kind")
-    if kind == "join":
-        if role not in ROLES:
-            raise ValueError("unknown role")
-        if not team_id:
-            raise ValueError("pick a team")
-    else:
-        team_id, role, perms = None, "owner", None
-        if kind == "new_team" and not (team_name or "").strip():
-            raise ValueError("name the new team")
+    if kind != "join":
+        raise ValueError(ONE_TEAM_ONLY)
+    if role not in ROLES:
+        raise ValueError("unknown role")
+    team_id = team_id or ONE_TEAM
+    if team_id != ONE_TEAM:
+        raise ValueError(ONE_TEAM_ONLY)
     email = _valid_email(email)
     if kind == "join":
         u = db.execute(select(User).where(func.lower(User.email) == email)).scalar()
@@ -252,22 +246,19 @@ def invite_target(inv: Invite) -> str:
 def accept_invite(db: Session, inv: Invite, user: User) -> Membership:
     if (user.email or "").lower() != inv.email.lower():
         raise PermissionError(f"this invite is for {inv.email}; you are signed in as {user.email or 'an account with no email'}")
-    if inv.kind == "join":
-        m = membership(db, inv.team_id, user.id)
-        if m:
-            if ROLES.index(inv.role) > ROLES.index(m.role):
-                m.role = inv.role
-                m.perms = inv.perms
-        else:
-            m = Membership(team_id=inv.team_id, user_id=user.id, role=inv.role, perms=inv.perms)
-            db.add(m)
-        tid = inv.team_id
+    # Every invite joins the installation's one team. One made before that (to a new team, or a workspace of
+    # their own) joins it as a member.
+    if inv.kind != "join":
+        inv.team_id, inv.role, inv.perms = ONE_TEAM, "member", None
+    tid = inv.team_id or ONE_TEAM
+    m = membership(db, tid, user.id)
+    if m:
+        if ROLES.index(inv.role) > ROLES.index(m.role):
+            m.role = inv.role
+            m.perms = inv.perms
     else:
-        label = inv.team_name if inv.kind == "new_team" else f"{(user.name or user.username or 'My').split(' ')[0]}'s workspace"
-        t = create_team(db, label, owner=user, personal=inv.kind == "individual")
-        inv.team_id = t.id
-        tid = t.id
-        m = membership(db, t.id, user.id)
+        m = Membership(team_id=tid, user_id=user.id, role=inv.role, perms=inv.perms)
+        db.add(m)
     inv.accepted_at = _now()
     inv.accepted_by = user.id
     user.last_team_id = tid

@@ -1008,3 +1008,15 @@ class FarmLibraryMigration(TenantMixin, Base):
     farm_id: Mapped[int | None] = mapped_column(Integer)     # id in the farm library
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class OrcaShare(Base):
+    """A shared folder for OrcaSlicer in the browser (routers/shares.py): each person's own desktop opens it under
+    Files, Shared, read-only or read and write by its two LLDAP groups. One installation, one team: not per team.
+    Marked for removal (deleting), it stays until the installation removed its files and forgot it."""
+    __tablename__ = "orca_share"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(40), unique=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    deleting: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

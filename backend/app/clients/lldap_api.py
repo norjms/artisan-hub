@@ -111,6 +111,14 @@ class LldapClient:
         self.gql("mutation($u: String!, $g: Int!) { removeUserFromGroup(userId: $u, groupId: $g) { ok } }",
                  {"u": uid, "g": self.group_id(group)})
 
+    def create_group(self, name: str) -> int:
+        """A new group (a shared folder's), its id."""
+        made = self.gql("mutation($n: String!) { createGroup(name: $n) { id } }", {"n": name}).get("createGroup") or {}
+        return made.get("id")
+
+    def delete_group(self, name: str) -> None:
+        self.gql("mutation($g: Int!) { deleteGroup(groupId: $g) { ok } }", {"g": self.group_id(name)})
+
     def delete_user(self, uid: str) -> None:
         self.gql("mutation($u: String!) { deleteUser(userId: $u) { ok } }", {"u": uid})
 

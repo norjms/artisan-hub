@@ -32,3 +32,9 @@ Notable changes to Artisan Hub. Versions follow the tags of this repository.
 - OrcaSlicer in the browser, a desktop for each person: when the installation gives everyone their own
   (`HUB_ORCASLICER_DESKTOPS=per-person`), People (Whole hub) lists the desktops' files under "Desktop files", with
   who has one open now and who has left the hub, and the owner removes a desktop's files there after confirming.
+
+- Shared folders for OrcaSlicer in the browser: on People (Whole hub) the owner keeps a list of folders and gives each
+  person no access, read only, or read and write (LLDAP groups `share-<slug>-read` and `share-<slug>-write`); owners
+  always write. The installation reads the list (`GET /api/platform/shares`, with its own key) when it starts someone's
+  desktop and opens what they may use under Files, Shared. Removing a folder marks it; its files go only when the
+  owner confirms on the installer's summary.

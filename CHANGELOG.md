@@ -29,3 +29,6 @@ Notable changes to Artisan Hub. Versions follow the tags of this repository.
 - Send to hub from OrcaSlicer in the browser (`HUB_ORCASLICER_OUTBOX`): files saved to "Send to hub" in the desktop
   become draft models in the library, credited to the desktop or to the person whose desktop sent them. Files the
   hub does not keep move to "Not sent" beside them with a note saying why.
+- OrcaSlicer in the browser, a desktop for each person: when the installation gives everyone their own
+  (`HUB_ORCASLICER_DESKTOPS=per-person`), People (Whole hub) lists the desktops' files under "Desktop files", with
+  who has one open now and who has left the hub, and the owner removes a desktop's files there after confirming.

@@ -82,6 +82,7 @@
     try { orca = await api.get('/api/platform/apps/orcaslicer'); } catch { orca = { available: false }; }
     orcaOn = Object.fromEntries(users.map((u) => [u.id, (orca.allowed || []).includes(u.id)]));
     await loadDesks();
+    await loadShares();
   }
   // With a desktop for each person, their files stay after they leave until the owner removes them here. The list
   // and the removal come from the installation itself, at the desktop's own address, as the signed-in owner.
@@ -119,6 +120,52 @@
     } catch { /* attempt shows the error */ }
     orcaBusy = null;
     await loadOrca();
+  }
+  // Shared folders: folders each person's own OrcaSlicer desktop opens under Files, Shared. The hub keeps the list
+  // and who may read or write each one; the installation mounts them when a desktop starts. Removing one only marks
+  // it: its files go when the owner confirms on the installer's summary.
+  let shares = $state(null);
+  let shareName = $state('');
+  let renaming = $state(null);     // { slug, name }
+  let shareBusy = $state(null);
+  let picking = $state(null);      // the person whose folders are being chosen
+  const liveShares = $derived((shares?.shares || []).filter((s) => !s.deleting));
+  async function loadShares() {
+    if (!orca.available) { shares = null; return; }
+    try { shares = await api.get('/api/platform/shares?members=1'); } catch { shares = null; }
+  }
+  async function addShare() {
+    const name = shareName.trim();
+    await attempt(() => api.post('/api/platform/shares', { name }), `${name} added`);
+    shareName = ''; await loadShares();
+  }
+  async function renameShare() {
+    const r = renaming;
+    await attempt(() => api.patch(`/api/platform/shares/${r.slug}`, { name: r.name }), 'Renamed');
+    renaming = null; await loadShares();
+  }
+  async function markShare(s) {
+    if (!confirm(`Remove ${s.name}? It leaves People and every desktop started from now on. Its files stay until you confirm on the installer's summary.`)) return;
+    await attempt(() => api.post(`/api/platform/shares/${s.slug}/remove`), `${s.name} marked for removal`);
+    await loadShares();
+  }
+  async function keepShare(s) { await attempt(() => api.post(`/api/platform/shares/${s.slug}/keep`), `${s.name} kept`); await loadShares(); }
+  const accessOf = (u, s) => shares?.access?.[u.id]?.[s.slug] || 'none';
+  function peopleText(s) {
+    let r = 0, w = 0;
+    for (const u of users) { if (u.platform_admin) continue; const a = accessOf(u, s); if (a === 'read') r++; if (a === 'write') w++; }
+    return r || w ? [w ? `${w} can write` : '', r ? `${r} can read` : ''].filter(Boolean).join(', ') : 'Owners only';
+  }
+  function mineText(u) {
+    const n = liveShares.filter((s) => accessOf(u, s) !== 'none').length;
+    return n ? `${n} of ${liveShares.length}` : 'None';
+  }
+  const LEVEL = { none: 'no access', read: 'read only', write: 'read and write' };
+  async function setAccess(u, s, access) {
+    shareBusy = `${u.id}:${s.slug}`;
+    try { await attempt(() => api.put(`/api/platform/users/${u.id}/shares/${s.slug}`, { access }), `${u.name}: ${s.name}, ${LEVEL[access]}`); } catch { /* attempt shows the error */ }
+    shareBusy = null;
+    await loadShares();
   }
   function openDirs(x) { edit = { id: x.id, name: x.name, deltaprints: x.source_dirs.deltaprints || '', inbox: x.source_dirs.inbox || '' }; }
   async function saveDirs() {
@@ -290,6 +337,30 @@
         {/each}
       </tbody></table>
     </section>
+    {#if shares?.available}
+      <section class="ah-glass ah-card" style="flex:none" data-testid="shared-folders">
+        <h2 class="ah-card-title">Shared folders</h2>
+        <p class="ah-muted" style="margin-top:-6px">Folders each person's own OrcaSlicer desktop opens under Files, Shared. Choose who reads or writes each one in the Shared folders column below; hub owners can always write. A change takes effect the next time that person's desktop starts.</p>
+        {#if shares.desktops !== 'per-person'}<div class="ah-banner" role="status">Everyone shares one OrcaSlicer desktop now, so it opens no shared folders. They appear once each person has a desktop of their own, which you turn on in the installer's summary.</div>{/if}
+        {#if shares.error}<div class="ah-banner ah-banner--bad" role="alert">{shares.error}</div>{/if}
+        <form class="flex gap-3" onsubmit={(e) => { e.preventDefault(); addShare(); }}>
+          <input class="input" maxlength="60" placeholder="Folder name, such as Production" bind:value={shareName} aria-label="New shared folder's name" />
+          <button class="btn primary" disabled={!shareName.trim()}>Add folder</button>
+        </form>
+        {#if shares.shares.length}
+          <table class="grid"><thead><tr><th>Folder</th><th>Who</th><th></th></tr></thead><tbody>
+            {#each shares.shares as s (s.slug)}
+              <tr><td>{s.name}{#if s.deleting} <span class="chip warn">Marked for removal</span>{/if}</td>
+                <td class="ah-secondary">{s.deleting ? "Its files go when you confirm on the installer's summary." : peopleText(s)}</td>
+                <td style="text-align:right;white-space:nowrap">
+                  {#if s.deleting}<button class="btn sm ghost" onclick={() => keepShare(s)}>Keep it</button>
+                  {:else}<button class="btn sm ghost" onclick={() => (renaming = { slug: s.slug, name: s.name })}>Rename</button>
+                    <button class="btn sm danger" onclick={() => markShare(s)}>Remove</button>{/if}</td></tr>
+            {/each}
+          </tbody></table>
+        {:else}<p class="ah-muted">No shared folders yet.</p>{/if}
+      </section>
+    {/if}
     <section class="ah-glass ah-card" style="flex:none">
       <h2 class="ah-card-title">Everyone with a sign-in</h2>
       {#if orca.available}
@@ -318,7 +389,7 @@
           <span>It lets them choose a new password for the login {pwLink.user}. It works once, for {pwLink.expires_in_minutes} minutes, and replaces any older link.</span>
         </div>
       {/if}
-      <table class="grid"><thead><tr><th>Person</th><th>Teams</th>{#if orca.available}<th>OrcaSlicer in the browser</th>{/if}<th>Last sign-in</th><th></th></tr></thead><tbody>
+      <table class="grid"><thead><tr><th>Person</th><th>Teams</th>{#if orca.available}<th>OrcaSlicer in the browser</th>{/if}{#if liveShares.length}<th>Shared folders</th>{/if}<th>Last sign-in</th><th></th></tr></thead><tbody>
         {#each users as u}
           <tr><td>{u.name}{#if u.platform_admin} <span class="chip live">Hub owner</span>{/if}<div class="ah-muted">{u.email || ''}</div></td>
             <td>{u.teams.map((m) => `${teamName(m.team_id)} (${ROLE_LABEL[m.role]})`).join(', ') || 'None'}</td>
@@ -330,6 +401,10 @@
                   <Toggle bind:checked={orcaOn[u.id]} disabled={orcaBusy === u.id || !!orca.error} label="OrcaSlicer in the browser for {u.name}" onchange={(on) => setOrca(u, on)} />
                 {/if}
               </div></td>
+            {/if}
+            {#if liveShares.length}
+              <td>{#if u.platform_admin}<span class="ah-muted">All, read and write</span>
+                {:else}<div class="flex items-center gap-2"><span>{mineText(u)}</span><button class="btn sm ghost" onclick={() => (picking = u)} aria-label="Choose shared folders for {u.name}">Choose</button></div>{/if}</td>
             {/if}
             <td class="ah-muted">{u.last_login_at ? ago(u.last_login_at) : 'Never'}</td>
             <td style="text-align:right;white-space:nowrap">{#if u.email}<button class="btn sm ghost" onclick={() => passwordLink(u)}>Make password link</button>{/if}
@@ -369,6 +444,34 @@
       <div class="ah-field"><label for="dp">DeltaPrints library (scanned every 15 min)</label><input id="dp" class="input" bind:value={edit.deltaprints} placeholder="{data.source_root}/..." /></div>
       <div class="ah-field"><label for="ib">Drop box (imported every 2 min)</label><input id="ib" class="input" bind:value={edit.inbox} placeholder="{data.source_root}/..." /></div>
       <div class="flex gap-2 justify-end"><button type="button" class="btn" onclick={() => (edit = null)}>Cancel</button><button class="btn primary">Save</button></div>
+    </form>
+  </div>
+{/if}
+
+{#if picking}
+  <div class="ah-dialog-back" role="presentation" onclick={(e) => e.target === e.currentTarget && (picking = null)}>
+    <div class="ah-dialog" role="dialog" aria-modal="true" aria-label="Shared folders for {picking.name}">
+      <h3 class="ah-card-title">Shared folders for {picking.name}</h3>
+      <p class="ah-muted">Takes effect the next time their OrcaSlicer desktop starts.</p>
+      {#each liveShares as s (s.slug)}
+        <div class="ah-field"><label for="sa-{s.slug}">{s.name}</label>
+          <select id="sa-{s.slug}" class="input" value={accessOf(picking, s)} disabled={shareBusy === `${picking.id}:${s.slug}`}
+            onchange={(e) => setAccess(picking, s, e.currentTarget.value)}>
+            <option value="none">No access</option><option value="read">Read only</option><option value="write">Read and write</option>
+          </select></div>
+      {/each}
+      <div class="flex gap-2 justify-end"><button class="btn primary" onclick={() => (picking = null)}>Done</button></div>
+    </div>
+  </div>
+{/if}
+
+{#if renaming}
+  <div class="ah-dialog-back" role="presentation" onclick={(e) => e.target === e.currentTarget && (renaming = null)}>
+    <form class="ah-dialog" role="dialog" aria-modal="true" aria-label="Rename shared folder" onsubmit={(e) => { e.preventDefault(); renameShare(); }}>
+      <h3 class="ah-card-title">Rename shared folder</h3>
+      <div class="ah-field"><label for="sr">Name</label><input id="sr" class="input" maxlength="60" bind:value={renaming.name} /></div>
+      <p class="ah-muted">Its files stay. Desktops show the new name the next time they start.</p>
+      <div class="flex gap-2 justify-end"><button type="button" class="btn" onclick={() => (renaming = null)}>Cancel</button><button class="btn primary" disabled={!renaming.name.trim()}>Rename</button></div>
     </form>
   </div>
 {/if}

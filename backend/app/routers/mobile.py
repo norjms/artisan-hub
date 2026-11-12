@@ -891,21 +891,10 @@ class TeamBody(BaseModel):
 
 @router.post("/owner/teams")
 def owner_make_team(body: TeamBody, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
-    """A new team. With owner_email of someone already in the hub they become its owner; otherwise invite one
-    (POST /owner/people)."""
+    """Formerly a new team. An installation has one team, so there is none to make: 410 Gone."""
     _owner(p)
     from ..services import teams as ts
-    from ..tenant import unscoped
-    with unscoped():
-        owner = None
-        if body.owner_email:
-            owner = db.execute(select(User).where(func.lower(User.email) == body.owner_email.strip().lower())).scalar()
-            if not owner:
-                raise HTTPException(404, "nobody with that email has signed in yet: invite them with POST /owner/people")
-        t = ts.create_team(db, body.name, owner=owner)
-        event(db, "api", f"Team '{t.name}' created from the mobile API", actor=_actor(p))
-        db.commit()
-        return {"id": t.id, "slug": t.slug, "name": t.name, "owner": owner.email if owner else None}
+    raise HTTPException(410, ts.ONE_TEAM_ONLY)
 
 
 @router.post("/owner/people")

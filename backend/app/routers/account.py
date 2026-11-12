@@ -22,29 +22,44 @@ router = APIRouter()
 TOKEN = r"^[A-Za-z0-9_-]{20,80}$"
 MIN_LENGTH = 10
 
+# The shared ArtisanHub look (artisanhub-ui glass-dark values), written out because this page is served on its own,
+# without the hub's front end. Fonts are the hub's copies under /theme/fonts (SIL Open Font License).
 _PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Choose your password - Artisan Hub</title>
+<meta name="color-scheme" content="dark">
+<title>Choose your password - ArtisanHub</title>
 <style>
-:root {{ --bg: #f6f5f2; --panel: #fff; --text: #1d1d1b; --muted: #5f5e5a; --line: #dcdad4; --accent: #b4532a;
-  --bad: #a3271f; }}
-@media (prefers-color-scheme: dark) {{ :root {{ --bg: #161615; --panel: #212120; --text: #ecebe7;
-  --muted: #a6a49e; --line: #3a3936; --accent: #e07a4b; --bad: #f08a80; }} }}
+@font-face {{ font-family: Manrope; font-weight: 400; src: url(/theme/fonts/manrope-latin-400-normal.woff2) format("woff2"); }}
+@font-face {{ font-family: Manrope; font-weight: 600; src: url(/theme/fonts/manrope-latin-600-normal.woff2) format("woff2"); }}
+@font-face {{ font-family: Sora; font-weight: 500; src: url(/theme/fonts/sora-latin-500-normal.woff2) format("woff2"); }}
+:root {{ --text: #f1f6fa; --text-2: rgba(236,243,248,0.85); --accent: #8fd3ff; --on-accent: #1d2a34;
+  --glass: rgba(255,255,255,0.08); --glass-line: rgba(255,255,255,0.16); --field: rgba(20,30,38,0.5);
+  --field-line: rgba(255,255,255,0.2); --bad: #ffd0d0; }}
+@media (prefers-reduced-transparency: reduce) {{ :root {{ --glass: #26343f; }} }}
 * {{ box-sizing: border-box; }}
-body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg);
-  color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 16px; }}
-main {{ width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--line);
-  border-radius: 12px; padding: 28px; }}
-h1 {{ font-size: 1.35rem; margin: 0 0 6px; }}
-p {{ color: var(--muted); margin: 0 0 18px; }}
-label {{ display: block; font-weight: 600; margin: 14px 0 6px; }}
-input {{ width: 100%; padding: 10px 12px; font: inherit; color: var(--text); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 8px; }}
-button {{ margin-top: 20px; width: 100%; padding: 11px; font: inherit; font-weight: 600; color: #fff;
-  background: var(--accent); border: 0; border-radius: 8px; cursor: pointer; }}
-.error {{ color: var(--bad); margin-top: 14px; }}
+body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; color: var(--text);
+  background: radial-gradient(80% 75% at 55% 35%, #3f566a 0%, #273642 50%, #172028 100%) fixed #172028;
+  font: 14px/1.5 Manrope, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }}
+.wrap {{ width: min(520px, 100%); }}
+.brand {{ display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 18px;
+  font: 600 20px Sora, Manrope, sans-serif; letter-spacing: -0.02em; }}
+.tile {{ width: 36px; height: 36px; border-radius: 12px; background: var(--accent); display: grid; place-items: center; }}
+main {{ display: flex; flex-direction: column; gap: 16px; padding: 28px; background: var(--glass);
+  border: 1px solid var(--glass-line); border-radius: 22px; backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }}
+h1 {{ font: 500 30px/1.1 Sora, Manrope, sans-serif; letter-spacing: -0.03em; margin: 0; }}
+p {{ color: var(--text-2); margin: 0; }}
+form {{ display: flex; flex-direction: column; gap: 16px; }}
+label {{ display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-2); }}
+input {{ height: 38px; padding: 0 12px; font: 14px Manrope, system-ui, sans-serif; color: var(--text); background: var(--field);
+  border: 1px solid var(--field-line); border-radius: 10px; }}
+input:focus {{ outline: none; box-shadow: 0 0 0 2px #172028, 0 0 0 4px var(--accent); }}
+button {{ height: 38px; font: 600 14px Manrope, system-ui, sans-serif; color: var(--on-accent); background: var(--accent);
+  border: 0; border-radius: 12px; cursor: pointer; }}
+.error {{ color: var(--bad); }}
 </style></head>
-<body><main>{body}</main></body></html>"""
+<body><div class="wrap"><div class="brand"><span class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+ stroke="#1d2a34" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5z"/><path
+ d="M3 7l9 5 9-5M12 12v10"/></svg></span>ArtisanHub</div><main>{body}</main></div></body></html>"""
 
 
 def _page(body: str, status: int = 200) -> HTMLResponse:
@@ -56,14 +71,14 @@ def _form(uid: str, error: str = "") -> HTMLResponse:
     err = f'<p class="error" role="alert">{html.escape(error)}</p>' if error else ""
     return _page(
         "<h1>Choose your password</h1>"
-        f"<p>For your Artisan Hub login, <strong>{html.escape(uid)}</strong>. At least {MIN_LENGTH} characters."
+        f"<p>For your ArtisanHub login, <strong>{html.escape(uid)}</strong>. At least {MIN_LENGTH} characters."
         " This link works once.</p>"
         '<form method="post" autocomplete="on">'
         f'<input type="text" name="username" value="{html.escape(uid)}" autocomplete="username" hidden>'
-        '<label for="pw">New password</label>'
-        f'<input id="pw" name="password" type="password" minlength="{MIN_LENGTH}" autocomplete="new-password" required>'
-        '<label for="pw2">The same again</label>'
-        '<input id="pw2" name="again" type="password" autocomplete="new-password" required>'
+        '<label for="pw">New password'
+        f'<input id="pw" name="password" type="password" minlength="{MIN_LENGTH}" autocomplete="new-password" required></label>'
+        '<label for="pw2">The same again'
+        '<input id="pw2" name="again" type="password" autocomplete="new-password" required></label>'
         f"{err}<button type=\"submit\">Save and sign in</button></form>",
         400 if error else 200)
 

@@ -1,4 +1,6 @@
 <script>
+  import { farmName, FarmName } from '$lib/nav.svelte.js';
+  import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
   import { api, fmtMoney } from '$lib/api.js';
 
@@ -29,20 +31,17 @@
   }
 </script>
 
-<div class="flex flex-wrap items-end gap-3 mb-4">
-  <div class="mr-auto">
-    <h1 class="text-2xl font-bold">Reports</h1>
-    <p class="muted text-sm">What the farm printed, what failed and what it cost, and what each product earns.</p>
-  </div>
-  <label class="text-sm">Last
+<Page title="Reports" description="What the farm printed, what failed and what it cost, and what each product earns.">
+{#snippet actions()}
+<label class="text-sm">Last
     <select class="input inline-block" style="width: auto" bind:value={days} onchange={load}>
       <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value={365}>365 days</option>
     </select></label>
-</div>
+{/snippet}
 
-<div class="flex border-b line mb-4">
+<div class="ah-tabs" role="tablist">
   {#each [['farm', 'Failures and waste'], ['printers', 'Printers'], ['filament', 'Filament use'], ['profit', 'Profit']] as [k, l]}
-    <button class="px-4 py-2.5 text-sm font-semibold border-b-2 {view === k ? 'border-brand-600' : 'border-transparent muted'}" onclick={() => (view = k)}>{l}</button>
+    <button role="tab" aria-selected={view === k} onclick={() => (view = k)}>{l}</button>
   {/each}
 </div>
 
@@ -61,11 +60,11 @@
       {#each f.reasons as r}
         <div class="mb-2">
           <div class="flex text-sm"><span class="mr-auto">{r.reason}</span><span class="font-semibold">{r.count}</span></div>
-          <div class="h-2 rounded" style="background: var(--panel-2)"><div class="h-2 rounded" style="width: {(100 * r.count) / maxReason}%; background: #dc2626"></div></div>
+          <div class="h-2 rounded" style="background: var(--ah-track)"><div class="h-2 rounded" style="width: {(100 * r.count) / maxReason}%; background: var(--ah-failure)"></div></div>
           <div class="text-xs muted">{kg(r.waste_g)}, {num(r.waste_hours)} h</div>
         </div>
       {:else}<p class="muted text-sm">No failed prints in this period.</p>{/each}
-      <p class="text-xs muted mt-2">Reasons come from plate checks; prints Watchtower stopped show its error.</p>
+      <p class="text-xs muted mt-2">Reasons come from plate checks; prints {farmName()} stopped show its error.</p>
     </div>
     <div class="panel p-4 scroll-x">
       <div class="flex items-center mb-3"><h2 class="font-semibold mr-auto">Models that fail most</h2><a class="btn sm" href={`/api/reports/models.csv?days=${days}`}>CSV</a></div>
@@ -80,7 +79,7 @@
       </table>
     </div>
   </div>
-  <p class="text-xs muted mt-3">Grams are Watchtower's estimate from the sliced file; a failed print counts the share it got through. Costs use the same filament prices and printer rates as slice costs.</p>
+  <p class="text-xs muted mt-3">Grams are {farmName() === 'Watchtower' ? "Watchtower's" : "the farm's"} estimate from the sliced file; a failed print counts the share it got through. Costs use the same filament prices and printer rates as slice costs.</p>
 
 {:else if view === 'filament'}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -128,7 +127,7 @@
             <td class="font-medium">{r.printer}</td><td>{r.jobs}</td>
             <td><span class="chip {r.success_rate >= 90 ? 'ok' : r.success_rate >= 75 ? 'warn' : 'bad'}">{r.success_rate ?? ''}%</span></td>
             <td>{num(r.print_hours)}</td>
-            <td><div class="flex items-center gap-2"><div class="h-2 flex-1 rounded" style="background: var(--panel-2)"><div class="h-2 rounded" style="width: {Math.min(100, r.utilisation)}%; background: #ea580c"></div></div><span class="text-xs">{r.utilisation}%</span></div></td>
+            <td><div class="flex items-center gap-2"><div class="h-2 flex-1 rounded" style="background: var(--ah-track)"><div class="h-2 rounded" style="width: {Math.min(100, r.utilisation)}%; background: var(--ah-accent)"></div></div><span class="text-xs">{r.utilisation}%</span></div></td>
             <td class="text-sm">{kg(r.waste_g)}, {num(r.waste_hours)} h</td><td class="text-right">{fmtMoney(r.waste_cost)}</td>
           </tr>
         {:else}<tr><td colspan="7" class="muted text-center py-4">No finished prints in this period.</td></tr>{/each}
@@ -172,3 +171,4 @@
     <p class="text-xs muted mt-2">Cost per unit = filament and machine time from the {p.printer || 'default'} printer's approved slice, plus BOM parts at their cheapest InvenTree supplier price. Revenue is units sold (paid, not test) at list price.</p>
   </div>
 {/if}
+</Page>

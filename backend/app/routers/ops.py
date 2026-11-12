@@ -26,7 +26,7 @@ from ..jobs import enqueue, event
 from ..models import (Model, Image, Product, PartCache, SpoolCache, FilamentCatalog, Order, Job, ApiKey, Setting,
                       Category)
 from ..serialize import model_detail
-from ..services import availability, importer, images as imgsvc
+from ..services import availability, importer, images as imgsvc, themes
 from ..services.shop import image_token, set_setting, setting
 
 router = APIRouter()
@@ -49,7 +49,7 @@ def me(db: Session = Depends(get_db), p: Principal = Depends(need("read"))):
     if p.get("user_id"):
         u = db.get(User, p["user_id"])
         teams = user_teams(db, u) if u else []
-        prefs = (u.prefs or {}) if u else {}
+        prefs = themes.normalize(u.prefs) if u else {}
     return {"user": {k: p.get(k) for k in ("username", "email", "name", "kind", "user_id", "platform_admin")},
             "prefs": prefs,
             "team": {"id": p["team_id"], "slug": p.get("team_slug"), "name": p.get("team_name"), "role": p.get("role")},
@@ -59,27 +59,28 @@ def me(db: Session = Depends(get_db), p: Principal = Depends(need("read"))):
                       "inventree": public_url("inventree"), "spoolman": public_url("spoolman")}}
 
 
-SKINS = ("watchtower", "openprinthq", "classic")
-
-
 class PrefsIn(BaseModel):
+    theme: str | None = None
+    reduce_transparency: str | None = None
+    # Sent by apps from before themes (a skin and a light/dark mode). Accepted and ignored: every look is a theme now.
     skin: str | None = None
     mode: str | None = None
 
 
 @router.put("/api/me/prefs")
 def set_prefs(body: PrefsIn, db: Session = Depends(get_db), p: Principal = Depends(need("read"))):
-    """The person's own look (skin and light/dark); API keys have none to keep."""
+    """The person's own look: a theme and whether to reduce transparency. API keys have none to keep."""
     from ..models import User
-    if body.skin is not None and body.skin not in SKINS:
-        raise HTTPException(400, "skin is watchtower, openprinthq or classic")
-    if body.mode is not None and body.mode not in ("system", "light", "dark"):
-        raise HTTPException(400, "mode is system, light or dark")
+    if body.theme is not None and body.theme not in themes.THEMES:
+        raise HTTPException(400, "theme is one of: " + ", ".join(themes.THEMES))
+    if body.reduce_transparency is not None and body.reduce_transparency not in themes.TRANSPARENCY:
+        raise HTTPException(400, "reduce_transparency is auto, on or off")
     u = db.get(User, p["user_id"]) if p.get("user_id") else None
     if not u:
         return {"saved": False}
-    prefs = dict(u.prefs or {})
-    prefs.update({k: v for k, v in (("skin", body.skin), ("mode", body.mode)) if v is not None})
+    prefs = themes.normalize(u.prefs)
+    prefs.update({k: v for k, v in (("theme", body.theme), ("reduce_transparency", body.reduce_transparency))
+                  if v is not None})
     u.prefs = prefs
     db.commit()
     return {"saved": True, "prefs": prefs}
@@ -724,8 +725,7 @@ def theme_look(request: Request, db: Session = Depends(get_db)):
     if not key or not hmac.compare_digest(sent, key) or not email:
         return Response(status_code=204, headers={"Cache-Control": "no-store"})
     u = db.scalars(select(User).where(func.lower(User.email) == email).order_by(User.last_login_at.desc().nullslast())).first()
-    prefs = (u.prefs or {}) if u else {}
-    skin = prefs.get("skin") if prefs.get("skin") in SKINS else "watchtower"
-    mode = prefs.get("mode") if prefs.get("mode") in ("system", "light", "dark") else "system"
-    return Response(content=json.dumps({"skin": skin, "mode": mode}), media_type="application/json",
+    prefs = themes.normalize(u.prefs if u else None)
+    look = {"theme": prefs["theme"], "reduce_transparency": prefs["reduce_transparency"]}
+    return Response(content=json.dumps(look), media_type="application/json",
                     headers={"Cache-Control": "private, max-age=60"})

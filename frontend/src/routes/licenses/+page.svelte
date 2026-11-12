@@ -1,4 +1,5 @@
 <script>
+  import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
@@ -42,10 +43,7 @@
   const others = $derived(designers.filter((d) => !ov?.designers.some((x) => x.designer_id === d.id)));
 </script>
 
-<h1 class="text-2xl font-bold mb-1">Commercial licenses</h1>
-<p class="muted text-sm mb-5 max-w-3xl">Licenses you hold to sell prints: memberships (valid while you pay), one-time purchases, or written permission.
-  Models marked "Commercial license" for a designer can be pushed and stay live only while one of that designer's licenses is in force.
-  You get an email 14 days before a membership ends and again when it has ended.</p>
+<Page title="Licenses" description="Commercial licenses you hold to sell prints: memberships (valid while you pay), one-time purchases, or written permission. Models marked Commercial license for a designer can be pushed and stay live only while one of that designer's licenses is in force. You get an email 14 days before a membership ends and again when it has ended.">
 
 {#if ov}
   {#if ov.commercial_without_designer}
@@ -107,7 +105,8 @@
   </div>
   <div class="panel p-4 mt-5 flex flex-wrap items-end gap-2 text-sm">
     <div class="flex-1 min-w-[200px]"><label class="lbl" for="od">Record a license for another designer</label>
-      <select id="od" class="input" bind:value={pickDesigner}><option value="">Choose a designer…</option>{#each others as d}<option value={d.id}>{d.name}</option>{/each}</select></div>
+      <select id="od" class="input" bind:value={pickDesigner}><option value="">Choose a designer</option>{#each others as d}<option value={d.id}>{d.name}</option>{/each}</select></div>
     <button class="btn" disabled={!pickDesigner} onclick={() => { ov.designers = [...ov.designers, { designer_id: Number(pickDesigner), designer: others.find((x) => x.id === Number(pickDesigner)).name, models: 0, live: 0, grants: [], status: 'none' }]; startAdd(Number(pickDesigner)); pickDesigner = ''; }}>Add</button>
   </div>
 {/if}
+</Page>

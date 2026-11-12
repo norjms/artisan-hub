@@ -9,7 +9,7 @@
   }
 </script>
 
-<button type="button" class="w-full border-2 border-dashed rounded-xl p-6 text-center text-sm transition {over ? 'border-brand-500 bg-brand-50' : 'line'}"
+<button type="button" class="w-full border-2 border-dashed rounded-xl p-6 text-center text-sm transition {over ? 'border-ah-accent bg-ah-chip-live-bg' : 'line'}"
   ondragover={(e) => { e.preventDefault(); over = true; }} ondragleave={() => (over = false)} ondrop={drop}
   onclick={() => input.click()} disabled={busy}>
   <span class="muted">{busy ? 'Uploading…' : label}</span>

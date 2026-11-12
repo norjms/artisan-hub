@@ -1,7 +1,9 @@
 <script>
+  import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
   import { api, ago } from '$lib/api.js';
   import { attempt } from '$lib/toast.svelte.js';
+  import { Icon } from 'artisanhub-ui';
   let jobs = $state([]);
   let state = $state('');
   let open = $state(null);
@@ -9,20 +11,27 @@
   onMount(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); });
   async function run(name, force = false) { await attempt(() => api.post(`/api/actions/${name}${force ? '?force=true' : ''}`), 'Queued'); load(); }
   async function retry(j) { await attempt(() => api.post(`/api/jobs/${j.id}/retry`), 'Retrying'); load(); }
-  const actions = [['scan-library', 'Scan DeltaPrints library'], ['scan-inbox', 'Scan inbox'], ['refresh-parts', 'Refresh InvenTree'],
-    ['refresh-spools', 'Refresh Spoolman'], ['sync-stock', 'Push stock to Woo'], ['poll-orders', 'Pull Woo orders'],
+  const RUN = [['scan-library', 'Scan the DeltaPrints library'], ['scan-inbox', 'Scan the inbox'], ['refresh-parts', 'Refresh InvenTree'],
+    ['refresh-spools', 'Refresh Spoolman'], ['sync-stock', 'Push stock to WooCommerce'], ['poll-orders', 'Pull WooCommerce orders'],
     ['manyfold-rescan', 'Rescan Manyfold'], ['manyfold-link', 'Link Manyfold models']];
 </script>
 
-<div class="flex items-end gap-3 mb-4">
-  <div class="mr-auto"><h1 class="text-2xl font-bold">Sync health</h1><p class="muted text-sm">Every push, import and sync is a job. Failures retry automatically with backoff; you can retry them here.</p></div>
-  <select class="input w-40" bind:value={state} onchange={load}><option value="">Recent</option><option value="failed">Failed</option><option value="queued">Queued</option><option value="running">Running</option><option value="done">Done</option></select>
-</div>
-<div class="panel p-4 mb-4 flex flex-wrap gap-2">
-  {#each actions as [k, l]}<button class="btn sm" onclick={() => run(k)}>{l}</button>{/each}
-  <button class="btn sm" onclick={() => run('scan-library', true)} title="Re-import every folder even if unchanged">Full re-import</button>
-</div>
-<div class="panel p-4 scroll-x">
+<Page title="Sync health" description="Every push, import and sync is a job. Failures retry automatically with backoff; you can retry them here.">
+{#snippet actions()}
+  <div class="ah-seg" role="group" aria-label="Which jobs">
+    {#each [['', 'Recent'], ['failed', 'Failed'], ['queued', 'Queued'], ['running', 'Running'], ['done', 'Done']] as [v, l]}<button type="button" aria-pressed={state === v} onclick={() => { state = v; load(); }}>{l}</button>{/each}
+  </div>
+{/snippet}
+{#snippet widgets()}
+  <section class="ah-glass ah-card">
+    <div class="flex items-center gap-[10px]"><div class="ah-icon-tile"><Icon name="sync" /></div><div style="flex:1"><h3 class="ah-widget-title">Run now</h3><div class="ah-muted">Each one queues a job</div></div></div>
+    <div class="flex flex-col gap-2">
+      {#each RUN as [k, l]}<button class="btn sm" style="justify-content:flex-start" onclick={() => run(k)}>{l}</button>{/each}
+      <button class="btn sm" style="justify-content:flex-start" onclick={() => run('scan-library', true)} title="Re-import every folder even if unchanged">Full re-import</button>
+    </div>
+  </section>
+{/snippet}
+<section class="ah-glass ah-card ah-scroll" style="flex:1">
   <table class="grid">
     <thead><tr><th>#</th><th>Job</th><th>Ref</th><th>State</th><th>Tries</th><th>When</th><th>By</th><th></th></tr></thead>
     <tbody>
@@ -39,4 +48,5 @@
       {/each}
     </tbody>
   </table>
-</div>
+</section>
+</Page>

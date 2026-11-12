@@ -1,4 +1,6 @@
 <script>
+  import Glyph from '$lib/Glyph.svelte';
+  import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
   import { api, ago } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
@@ -82,7 +84,7 @@
   const aiCards = $derived(aiOrder.map((o) => list.find((c) => c.kind === o.kind)).filter(Boolean));
 </script>
 
-<svelte:head><title>Connections · Artisan Hub</title></svelte:head>
+<svelte:head><title>Connections · ArtisanHub</title></svelte:head>
 
 {#snippet card(c)}
   <div class="panel p-4 flex flex-col gap-2">
@@ -108,9 +110,7 @@
   </div>
 {/snippet}
 
-<div class="max-w-4xl">
-  <h1 class="text-2xl font-bold mb-1">Connected services</h1>
-  <p class="muted text-sm mb-5">The outside systems {session.me?.team?.name || 'this team'} syncs with. Each team keeps its own settings; two teams can point at the same instance or at their own. Passwords and keys are stored encrypted and never shown again.</p>
+<Page title="Connections" description={`The outside systems ${session.me?.team?.name || 'this team'} syncs with. Each team keeps its own settings; two teams can point at the same instance or at their own. Passwords and keys are stored encrypted and never shown again.`}>
 
   <div class="grid gap-3 md:grid-cols-2">
     {#each services as c}{@render card(c)}{/each}
@@ -130,8 +130,8 @@
           {:else if !o.enabled}<span class="chip warn">paused, skipped</span>
           {:else if o.last_test_ok === false}<span class="chip bad">failing</span>
           {:else if !o.model}<span class="chip warn">no model, skipped</span>{/if}
-          <button class="btn sm" aria-label="Move {o.label} up" disabled={i === 0} onclick={() => move(i, -1)}>↑</button>
-          <button class="btn sm" aria-label="Move {o.label} down" disabled={i === aiOrder.length - 1} onclick={() => move(i, 1)}>↓</button>
+          <button class="btn sm" aria-label="Move {o.label} up" disabled={i === 0} onclick={() => move(i, -1)}><Glyph name="arrow-up" /></button>
+          <button class="btn sm" aria-label="Move {o.label} down" disabled={i === aiOrder.length - 1} onclick={() => move(i, 1)}><Glyph name="arrow-down" /></button>
         </li>
       {/each}
     </ol>
@@ -153,7 +153,7 @@
     <button class="btn sm" onclick={async () => { lang = await attempt(() => api.put('/api/import-language', { translate: lang.translate, connection: lang.connection }), 'Saved'); }}>Save</button>
     <span class="text-xs muted">A local connection (Ollama) costs nothing per import.</span>
   </div>
-</div>
+</Page>
 
 {#if edit}
   <div class="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4" role="presentation" onclick={(e) => e.target === e.currentTarget && (edit = null)}>

@@ -23,7 +23,7 @@
 <svelte:window onkeydown={key} />
 
 <div class="panel overflow-hidden">
-  <div class="relative bg-black/5 aspect-[4/5] sm:aspect-[5/4] lg:aspect-[4/3] select-none">
+  <div class="relative bg-ah-panel aspect-[4/5] sm:aspect-[5/4] lg:aspect-[4/3] select-none">
     {#if cur}
       <button class="w-full h-full" onclick={() => (full = true)} aria-label="Open full screen">
         <img src={cur.large} alt="" class="w-full h-full object-contain" />
@@ -40,7 +40,7 @@
   <div class="flex items-center gap-2 p-2 border-t line">
     <div bind:this={strip} class="flex gap-2 scroll-x flex-1 py-1">
       {#each images as im, i (im.id)}
-        <button class="flex-none w-20 h-20 rounded-lg overflow-hidden border-2 {i === idx ? 'border-brand-500' : 'border-transparent opacity-80 hover:opacity-100'}"
+        <button class="flex-none w-20 h-20 rounded-lg overflow-hidden border-2 {i === idx ? 'border-ah-accent' : 'border-transparent opacity-80 hover:opacity-100'}"
                 onclick={() => (idx = i)}>
           <img src={im.thumb} alt="" loading="lazy" class="w-full h-full object-cover" />
         </button>
@@ -70,7 +70,7 @@
     </div>
     <div class="flex gap-2 scroll-x p-3">
       {#each images as im, i (im.id)}
-        <button class="flex-none w-16 h-16 rounded overflow-hidden border-2 {i === idx ? 'border-brand-500' : 'border-transparent opacity-60'}" onclick={() => (idx = i)}>
+        <button class="flex-none w-16 h-16 rounded overflow-hidden border-2 {i === idx ? 'border-ah-accent' : 'border-transparent opacity-60'}" onclick={() => (idx = i)}>
           <img src={im.thumb} alt="" loading="lazy" class="w-full h-full object-cover" />
         </button>
       {/each}

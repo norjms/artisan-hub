@@ -46,6 +46,57 @@ jobs:
           npm install --no-audit --no-fund
           npm run build
 
+  screens:
+    # Every route of a throwaway hub (SQLite, development sign-in) at 1920 x 1080 and 1280 x 860: the page never
+    # scrolls and nothing is cut off. The screenshots are kept with the run.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 22
+      - name: Install
+        run: |
+          pip install --no-cache-dir -r backend/requirements.txt
+          cd frontend
+          npm install --no-audit --no-fund
+          npm run build
+          npx playwright install --with-deps chromium
+      - name: Start a throwaway hub
+        env:
+          HUB_DATA_DIR: /tmp/hub/data
+          HUB_LIBRARY_ROOT: /tmp/hub/lib
+          HUB_SOURCE_ROOT: /tmp/hub
+          HUB_DATABASE_URL: sqlite:////tmp/hub/hub.db
+          HUB_DEV_AUTH_BYPASS: "true"
+          HUB_SESSION_SECRET: ci-only-session-secret-ci-only
+        run: |
+          mkdir -p /tmp/hub/data /tmp/hub/lib
+          ln -s ../frontend/build backend/static
+          cd backend
+          nohup uvicorn app.main:app --host 127.0.0.1 --port 8080 > /tmp/hub/hub.log 2>&1 &
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8080/healthz >/dev/null && break; sleep 1; done
+          curl -fs -X POST http://127.0.0.1:8080/api/v1/ingest -F 'meta={"name":"Gear housing","category":"Mechanical"}' >/dev/null
+      - name: Screens
+        working-directory: frontend
+        env:
+          BASE_URL: http://127.0.0.1:8080
+          SHOTS_DIR: test-results/screens
+        run: npx playwright test
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: screens
+          path: frontend/test-results/screens
+          retention-days: 14
+      - name: Hub log
+        if: failure()
+        run: tail -n 100 /tmp/hub/hub.log
+
   secrets:
     runs-on: ubuntu-latest
     steps:

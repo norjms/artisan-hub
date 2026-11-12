@@ -9,3 +9,4 @@ frontend/.svelte-kit/
 *.env
 compose.yml
 compose.override.yml
+test-results/

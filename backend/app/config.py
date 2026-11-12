@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # OrcaSlicer in the browser, when the installation runs it behind Authelia: the LLDAP group whose members may
     # open it besides the hub's owners. The owner turns it on or off per person on People. Empty = not run here.
     orcaslicer_group: str = ""
+    # Its outbox ("Send to hub" in the desktop), mounted in the worker by the installer: files saved there become
+    # models in the library (services/orcaslicer_outbox.py). Empty = not run here.
+    orcaslicer_outbox: str = ""
     oidc_logout_url: str = ""                   # where sign-out sends people; empty = the provider's end-session
 
     # WooCommerce

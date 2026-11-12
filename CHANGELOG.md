@@ -26,3 +26,6 @@ Notable changes to Artisan Hub. Versions follow the tags of this repository.
 - OrcaSlicer in the browser: on an installation that runs it behind Authelia (`HUB_ORCASLICER_GROUP`), the hub's
   owner turns it on or off per person on People (Whole hub). The person joins or leaves that LLDAP group; hub
   owners can always open it.
+- Send to hub from OrcaSlicer in the browser (`HUB_ORCASLICER_OUTBOX`): files saved to "Send to hub" in the desktop
+  become draft models in the library, credited to the desktop or to the person whose desktop sent them. Files the
+  hub does not keep move to "Not sent" beside them with a note saying why.

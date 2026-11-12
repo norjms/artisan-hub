@@ -138,8 +138,11 @@ def deliver(db, p: dict) -> dict:
     for ch in p.get("channels") or []:
         try:
             if ch == "email":
+                from ..config import settings
                 from ..tasks import send_mail
-                send_mail(f"[Farm] {title}", msg + (f"\n\n{link}" if link else ""), db=db)
+                from . import emails
+                mail = emails.farm_alert(title, msg, link, settings().public_url)
+                send_mail(mail.subject, mail.text(), db=db, html=mail.html())
             elif ch == "ntfy":
                 _ntfy(c, title, msg, link, data, p.get("urgent"))
             elif ch == "telegram":

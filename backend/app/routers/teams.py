@@ -55,14 +55,12 @@ def _send_invite(db: Session, inv: Invite, raw: str, by: User | None) -> dict:
     mailed = False
     if settings().smtp_host:
         try:
+            from ..services import emails
             from ..tasks import send_mail
-            steps = (f"1. Create your Artisan Hub login: {login['signup_url']}\n2. Then accept: {link}\n"
-                     if login.get("signup_url") else f"Accept: {link}\n")
-            send_mail(f"You're invited to {target} on Artisan Hub",
-                      f"{by.label if by else 'The Artisan Hub owner'} invited you to {target}"
-                      f"{' as ' + inv.role if inv.kind == 'join' else ''}.\n\n{steps}\n"
-                      f"Use the email address this was sent to. The links work for 14 days.", to=[inv.email],
-                      reply_to=by.email if by and by.email else None)
+            mail = emails.invite(by.label if by else "", target, inv.role if inv.kind == "join" else None, link,
+                                 login.get("signup_url"), tsvc.INVITE_TTL.days, settings().public_url)
+            send_mail(mail.subject, mail.text(), to=[inv.email], reply_to=by.email if by and by.email else None,
+                      html=mail.html())
             mailed = True
         except Exception:  # noqa: BLE001
             mailed = False

@@ -202,14 +202,12 @@ def _alert(db, job):
         return {"skipped": "already alerted today"}
     from .services.availability import product_availability
     a = product_availability(db, p)
-    body = [f"{p.title} ({p.sku}) is live on the store but you are out of supplies for it.",
-            "Woo stock was set to 0 so no new orders can come in.", ""]
     lines = a.get("lines") or [ln for v in (a.get("variants") or {}).values() for ln in v["lines"]]
-    for ln in lines:
-        if ln["units"] == 0:
-            body.append(f"- {ln['label']}: need {ln['per_unit']} per unit, available {ln['available']}")
-    body += ["", f"{settings().public_url}/planner"]
-    send_mail(f"Out of supplies: {p.title}", "\n".join(body), db=db)
+    short = [f"{ln['label']}: need {ln['per_unit']} per unit, available {ln['available']}"
+             for ln in lines if ln["units"] == 0]
+    from .services import emails
+    mail = emails.out_of_supplies(p.title, p.sku, short, settings().public_url)
+    send_mail(mail.subject, mail.text(), db=db, html=mail.html())
     if row:
         row.value = time.time()
     else:
@@ -217,7 +215,10 @@ def _alert(db, job):
     return {"sent": True}
 
 
-def send_mail(subject: str, body: str, db=None, to: list[str] | None = None, reply_to: str | None = None):
+def send_mail(subject: str, body: str, db=None, to: list[str] | None = None, reply_to: str | None = None,
+              html: str | None = None):
+    """Send to ``to``, or to the hub's alert list. ``html`` is the same message in the hub's look
+    (app.services.emails); the plain text always goes too, for programs that show only text."""
     s = settings()
     if to is None:
         from .services.teams import alert_recipients
@@ -244,6 +245,8 @@ def send_mail(subject: str, body: str, db=None, to: list[str] | None = None, rep
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=(s.smtp_from.rsplit("@", 1)[-1].strip(" >") or "localhost"))
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     from urllib.parse import urlparse
     with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=30, local_hostname=urlparse(s.public_url).hostname) as smtp:
         smtp.starttls()
@@ -818,9 +821,9 @@ def _grants_check(db, job):
         event(db, "licenses", notes[-1][2:], level="warn")
     if notes:
         try:
-            send_mail("Artisan Hub: commercial license reminder",
-                      "Commercial licenses you sell under:\n\n" + "\n".join(notes) +
-                      f"\n\nManage them at {settings().public_url}/licenses")
+            from .services import emails
+            mail = emails.license_reminder([n.removeprefix("- ") for n in notes], settings().public_url)
+            send_mail(mail.subject, mail.text(), html=mail.html())
         except Exception:  # noqa: BLE001
             log.exception("license reminder mail failed")
     return {"notices": len(notes), "hidden": hidden}
@@ -926,11 +929,12 @@ def _lic_recheck(db, job):
         lines = []
         for m, what in changed:
             live = bool(m.product and m.product.live)
-            lines.append(f"- {m.code} {m.name}: {what}{' (LIVE in store)' if live else ''}\n  {settings().public_url}/models/{m.id}")
+            lines.append((f"{m.code} {m.name}: {what}{' (live in the store)' if live else ''}",
+                          f"{settings().public_url}/models/{m.id}"))
         try:
-            send_mail(f"Artisan Hub: {len(changed)} model license change(s)",
-                      "These designs changed license since you downloaded them. Your saved license record "
-                      "shows the terms at download time; review whether you want to keep selling.\n\n" + "\n".join(lines))
+            from .services import emails
+            mail = emails.license_changes(lines, settings().public_url)
+            send_mail(mail.subject, mail.text(), html=mail.html())
         except Exception:  # noqa: BLE001
             log.exception("license alert mail failed")
     return {"checked": checked, "changed": len(changed)}

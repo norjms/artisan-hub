@@ -1,4 +1,5 @@
 <script>
+  import { farmName, FarmName } from '$lib/nav.svelte.js';
   import { onMount } from 'svelte';
   import { api, ago } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
@@ -21,7 +22,7 @@
   }
   function openTask() { loadParts(); newTask = { printer: printers[0] || '', title: '', parts: [], notes: '', out_of_service: false }; }
   async function service(t, on) {
-    await attempt(() => api.post(`/api/maintenance/tasks/${t.id}/service`, { out_of_service: on }), on ? `${t.printer} is out of service in Watchtower` : `${t.printer} is back in service`);
+    await attempt(() => api.post(`/api/maintenance/tasks/${t.id}/service`, { out_of_service: on }), on ? `${t.printer} is out of service in ${farmName()}` : `${t.printer} is back in service`);
     load();
   }
   async function syncWt() {

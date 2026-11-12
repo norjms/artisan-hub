@@ -1,4 +1,5 @@
 <script>
+  import { Icon } from 'artisanhub-ui';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.js';
@@ -20,20 +21,20 @@
   }
 </script>
 
-<svelte:head><title>Join Artisan Hub</title></svelte:head>
+<svelte:head><title>Join ArtisanHub</title></svelte:head>
 
-<div class="min-h-[70vh] grid place-items-center">
-  <div class="panel p-6 w-full max-w-md">
-    <div class="flex items-center gap-2 font-bold text-lg mb-4"><img src="/favicon.svg" alt="" class="w-7 h-7" /> Artisan Hub</div>
-    {#if err}
-      <h1 class="text-xl font-semibold mb-2">Can't use this invite</h1>
+<div style="width:min(520px,100%)">
+  <div class="flex items-center justify-center gap-[10px]" style="margin-bottom:18px"><span class="ah-icon-tile" style="background:var(--ah-accent);color:var(--ah-on-accent)"><Icon name="cube" /></span><span class="ah-sidebar__brand" style="padding:0">ArtisanHub</span></div>
+  <section class="ah-glass ah-card" style="padding:28px;gap:16px">
+        {#if err}
+      <h1 class="ah-title" style="font-size:30px">Can't use this invite</h1>
       <p class="muted">{err}</p>
-      <a class="btn mt-4 inline-block" href="/">Go to Artisan Hub</a>
+      <a class="btn mt-4 inline-block" href="/">Go to ArtisanHub</a>
     {:else if info}
-      <h1 class="text-xl font-semibold mb-2">{info.kind === 'join' ? `Join ${info.team}` : info.kind === 'new_team' ? `Your team: ${info.team}` : 'Your own workspace'}</h1>
+      <h1 class="ah-title" style="font-size:30px">{info.kind === 'join' ? `Join ${info.team}` : info.kind === 'new_team' ? `Your team: ${info.team}` : 'Your own workspace'}</h1>
       <p class="muted mb-4">{info.kind === 'join' ? `You were invited as ${info.role}.` : "You'll be its owner and can invite your own people."} This invite is for <b>{info.email}</b>.</p>
       {#if info.signed_in && info.matches}
-        <button class="btn primary w-full" disabled={busy} onclick={accept}>{busy ? 'Joining…' : 'Accept invite'}</button>
+        <button class="btn primary w-full" disabled={busy} onclick={accept}>{busy ? 'Joining...' : 'Accept invite'}</button>
       {:else if info.signed_in}
         <p class="mb-4" style="color:var(--bad)">You are signed in as {info.signed_in_as || 'another account'}.</p>
         <a class="btn w-full inline-block text-center" href="/auth/logout">Sign out and use {info.email}</a>
@@ -49,7 +50,7 @@
         </ol>
       {/if}
     {:else}
-      <p class="muted">Checking invite…</p>
+      <p class="muted">Checking the invite...</p>
     {/if}
-  </div>
+  </section>
 </div>

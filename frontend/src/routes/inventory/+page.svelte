@@ -1,4 +1,7 @@
 <script>
+  import Glyph from '$lib/Glyph.svelte';
+  import { farmName, FarmName } from '$lib/nav.svelte.js';
+  import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
@@ -16,7 +19,7 @@
   async function syncSpools() {
     const r = await attempt(() => api.post('/api/spools/sync', {}));
     const n = (k) => (r[k] || []).length;
-    toast(`Synced: ${n('to_spoolman')} use recorded in Spoolman, ${n('to_watchtower')} weights sent to Watchtower, ${n('created_in_spoolman') + n('created_in_watchtower')} new spools linked`);
+    toast(`Synced: ${n('to_spoolman')} use recorded in Spoolman, ${n('to_watchtower')} weights sent to ${farmName()}, ${n('created_in_spoolman') + n('created_in_watchtower')} new spools linked`);
     setTimeout(load, 3000);
   }
   onMount(load);
@@ -31,13 +34,13 @@
   const shown = $derived(parts.filter((p) => (!onlyUsed || p.used_by.length) && (p.name + ' ' + (p.ipn || '') + ' ' + (p.category || '')).toLowerCase().includes(q.toLowerCase())));
 </script>
 
-<div class="flex items-end gap-3 mb-4">
-  <div class="mr-auto"><h1 class="text-2xl font-bold">Inventory</h1><p class="muted text-sm">Parts from InvenTree, filament from Spoolman (kept in step with Watchtower). Refreshed every 5 minutes.</p></div>
-  <button class="btn" onclick={refresh}>Refresh now</button>
-</div>
-<div class="flex gap-1 border-b line mb-4">
+<Page title="Inventory" description={`Parts from InvenTree, filament from Spoolman (kept in step with ${farmName()}). Refreshed every 5 minutes.`}>
+{#snippet actions()}
+<button class="btn" onclick={refresh}>Refresh now</button>
+{/snippet}
+<div class="ah-tabs" role="tablist" aria-label="Inventory">
   {#each [['parts', 'Parts'], ['filament', 'Filament'], ['needs', 'Filament for live products']] as [k, l]}
-    <button class="px-4 py-2 text-sm font-semibold border-b-2 {tab === k ? 'border-brand-600' : 'border-transparent muted'}" onclick={() => (tab = k)}>{l}</button>
+    <button role="tab" aria-selected={tab === k} onclick={() => (tab = k)}>{l}</button>
   {/each}
 </div>
 
@@ -62,7 +65,7 @@
             <td class="text-xs">{#each p.used_by as u}<a class="chip mr-1 {u.live ? 'ok' : ''}" href={`/models/${u.model_id}`}>{u.sku} ×{u.qty}</a>{/each}</td>
             <td class="text-xs">{#each p.suppliers as s}{#if s.link}<a class="underline" target="_blank" href={s.link}>{s.name || 'link'}</a>{:else}{s.name}{/if}{/each}</td>
             <td class="whitespace-nowrap">
-              <button class="btn sm" onclick={() => adjust(p, -1)}>−1</button>
+              <button class="btn sm" onclick={() => adjust(p, -1)} aria-label="Take one away"><Glyph name="minus" size={14} />1</button>
               <button class="btn sm" onclick={() => adjust(p, 1)}>+1</button>
               <button class="btn sm" onclick={() => { const n = Number(prompt('Add how many? (negative to remove)')); if (n) adjust(p, n); }}>±</button>
             </td>
@@ -75,7 +78,7 @@
   <div class="panel p-4">
     <div class="flex flex-wrap items-center gap-2 mb-3">
       {#if ss}
-        <span class="text-sm muted mr-auto">Spoolman and Watchtower sync every 5 minutes: Watchtower's print use is recorded in Spoolman, Spoolman's weights go to Watchtower, new spools are added on the other side.
+        <span class="text-sm muted mr-auto">Spoolman and {farmName()} sync every 5 minutes: {farmName() === 'Watchtower' ? "Watchtower's" : "the farm's"} print use is recorded in Spoolman, Spoolman's weights go to {farmName()}, new spools are added on the other side.
           {#if ss.last}Last: {new Date(ss.last.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}, {ss.links.filter((l) => l.state === 'ok').length} spools linked{#if ss.links.some((l) => l.state === 'broken')}, <span class="text-red-600">{ss.links.filter((l) => l.state === 'broken').length} broken</span>{/if}.{/if}
           {#if !ss.enabled}<span class="chip warn">off</span>{/if}</span>
         <button class="btn sm" onclick={syncSpools}>Sync spools now</button>
@@ -113,3 +116,4 @@
     </table>
   </div>
 {/if}
+</Page>

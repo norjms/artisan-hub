@@ -65,7 +65,7 @@
 
 <div class="panel p-5">
   <h3 class="font-semibold mb-1">Add a model by link</h3>
-  {#if !compact}<p class="text-sm muted mb-3">Paste a link from MakerWorld, Printables, Thingiverse, Creality Cloud, Thangs, MyMiniFactory or Cults3D, or a direct STL/3MF/STEP/OBJ/ZIP link or any model page. The hub pulls photos, description, designer, print settings, filament, hardware, files and the license, and saves a dated license record. With the <a class="underline" href="/add-on">browser add-on</a> it is one click on the model page.</p>{/if}
+  {#if !compact}<p class="text-sm muted mb-3">Paste a link from MakerWorld, Printables, Thingiverse, Creality Cloud, Thangs, MyMiniFactory or Cults3D, or a direct STL/3MF/STEP/OBJ/ZIP link or any model page. The hub pulls photos, description, designer, print settings, filament, hardware, files and the license, and saves a dated license record. With the <a class="underline" href="/devices">browser add-on</a> it is one click on the model page.</p>{/if}
   <form class="flex gap-2" onsubmit={(e) => { e.preventDefault(); preview(); }}>
     <input class="input" placeholder="https://www.printables.com/model/… or makerworld.com/en/models/…" bind:value={url} />
     <button class="btn" disabled={busy || !url}>{busy && !pv ? 'Looking…' : 'Preview'}</button>
@@ -104,7 +104,7 @@
         <div class="lbl">Print profile</div>
         <div class="space-y-1.5 max-h-64 overflow-auto">
           {#each pv.profiles as pr}
-            <label class="flex items-start gap-2 text-sm p-2 rounded-lg border line cursor-pointer {prof === String(pr.id) ? 'border-brand-600' : ''}">
+            <label class="flex items-start gap-2 text-sm p-2 rounded-lg border line cursor-pointer {prof === String(pr.id) ? 'border-ah-accent' : ''}">
               <input type="radio" name="prof" value={String(pr.id)} bind:group={prof} class="mt-1" />
               <span class="flex-1 min-w-0">
                 <span class="font-medium">{pr.title || 'Designer settings'}</span>{#if pr.default} <span class="chip">default</span>{/if}

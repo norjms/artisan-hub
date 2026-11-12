@@ -1,4 +1,5 @@
 <script>
+  import { farmName, FarmName } from '$lib/nav.svelte.js';
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
@@ -45,7 +46,7 @@
 </script>
 
 {#if !tl}<p class="muted">Loading...</p>{:else}
-  <p class="text-sm muted mb-3">An estimate: printers free up when Watchtower says their print ends, plus {Math.round(tl.turnaround_minutes)} minutes to clear the plate; waiting jobs go highest priority first, oldest first, to the printer that is free soonest and has an approved slice of the model. Watchtower makes the real choice.</p>
+  <p class="text-sm muted mb-3">An estimate: printers free up when {farmName()} says their print ends, plus {Math.round(tl.turnaround_minutes)} minutes to clear the plate; waiting jobs go highest priority first, oldest first, to the printer that is free soonest and has an approved slice of the model. Watchtower makes the real choice.</p>
 
   <div class="panel p-4 scroll-x mb-4">
     <h2 class="font-semibold mb-2">Orders in the farm</h2>

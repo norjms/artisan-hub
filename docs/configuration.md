@@ -59,6 +59,7 @@ People sign in through an OpenID Connect provider such as Authentik. Without it,
 | `HUB_LLDAP_PASSWORD` | empty | *Secret.* Its password. |
 | `HUB_LLDAP_GROUP` | `hub-users` | Group invited people join. |
 | `HUB_ORCASLICER_GROUP` | empty | When the installation runs OrcaSlicer in the browser behind Authelia: the LLDAP group whose members may open it, besides the hub's owners (`HUB_ADMIN_GROUP`), who always may. The owner turns it on or off per person on People (Whole hub). Needs `HUB_LLDAP_URL`. Empty means the hub shows no such switch. |
+| `HUB_ORCASLICER_OUTBOX` | empty | When the installation runs OrcaSlicer in the browser: the folder in the worker where the desktop's "Send to hub" folder is mounted. Every 30 seconds the worker takes each finished 3MF, STL, STEP, OBJ or G-code file (up to 500 MB) into the library as a new draft model with its licence unknown, credited to "OrcaSlicer in the browser" (`shared/`) or to the person whose desktop sent it (`people/<username>/`). Anything else moves to `Not sent` in the same folder with a note saying why. Empty means off. |
 | `HUB_OIDC_LOGOUT_URL` | empty | Where signing out sends people, for a provider without an end-session page at the issuer. |
 
 ## WooCommerce

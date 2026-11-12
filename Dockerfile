@@ -20,8 +20,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY --from=ui /ui/build ./static
 RUN groupadd -g 1000 hub && useradd -u 1000 -g 1000 -G 0 -M -d /app hub \
- && mkdir -p /data /srv/library && chown 1000:1000 /data /srv/library
-# /data and /srv/library exist and belong to the hub user, so a new Docker volume mounted there is writable.
+ && mkdir -p /data /srv/library /srv/orcaslicer-outbox/shared /srv/orcaslicer-outbox/people \
+ && chown 1000:1000 /data /srv/library /srv/orcaslicer-outbox/shared /srv/orcaslicer-outbox/people
+# These exist and belong to the hub user, so a new Docker volume mounted there is writable: data, the library and
+# OrcaSlicer in the browser's outbox (HUB_ORCASLICER_OUTBOX), which the desktop writes as the same user.
 USER 1000:1000
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1

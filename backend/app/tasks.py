@@ -193,6 +193,12 @@ def _scan_inbox(db, job):
     return {"imported": n}
 
 
+@handler("library.orcaslicer_outbox")
+def _orcaslicer_outbox(db, job):
+    from .services import orcaslicer_outbox
+    return orcaslicer_outbox.take_in(db)
+
+
 @handler("alert.out_of_supplies")
 def _alert(db, job):
     p = db.get(Product, job.payload["product_id"])
@@ -984,6 +990,19 @@ def _has_dir(key):
     return check
 
 
+def _orcaslicer_outbox_here(team):
+    """The installation runs OrcaSlicer in the browser, and this is its team (one per installation)."""
+    from .db import SessionLocal
+    from .models import Team
+    if not settings().orcaslicer_outbox:
+        return False
+    s = SessionLocal()
+    try:
+        return s.execute(select(Team.id).order_by(Team.id).limit(1)).scalar() == team.id
+    finally:
+        s.close()
+
+
 def _has_models(team):
     from .db import SessionLocal
     from .tenant import bind_session
@@ -1013,6 +1032,7 @@ every("woo.sync_stock", 300, needs="woo")
 every("woo.poll_orders", 600, needs="woo")
 every("library.scan_deltaprints", 900, needs=_has_dir("deltaprints"))
 every("library.scan_inbox", 120, needs=_has_dir("inbox"))
+every("library.orcaslicer_outbox", 30, needs=_orcaslicer_outbox_here)
 every("manyfold.link", 900, needs="manyfold")
 every("license.recheck", 86400, needs=_has_models)
 every("license.grants_check", 6 * 3600, needs=_has_models)

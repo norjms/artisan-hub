@@ -184,7 +184,7 @@
   </div>
 
   {#if !sl.printers.length}
-    <div class="panel p-5 text-sm">No printers yet. Add one on the <a class="underline" href="/printers">Printers</a> page.</div>
+    <div class="panel p-5 text-sm">No printers yet. Add one on the <a class="underline" href="/slicing?tab=printers">Printers</a> tab of Slicing.</div>
   {/if}
 
   <div class="grid xl:grid-cols-2 gap-4">
@@ -219,7 +219,7 @@
 
         {#if p.previews?.length}
           <div class="flex gap-2 mt-3 scroll-x">
-            {#each p.previews as src}<img {src} alt="Plate preview for {p.printer}" class="h-40 rounded-lg border line bg-black/5" loading="lazy" />{/each}
+            {#each p.previews as src}<img {src} alt="Plate preview for {p.printer}" class="h-40 rounded-lg border line bg-ah-panel" loading="lazy" />{/each}
           </div>
         {/if}
 
@@ -303,7 +303,7 @@
             <div class="min-w-[14rem] flex-1"><label class="lbl" for="uf{p.profile_id}">Or print a file sliced elsewhere</label>
               <select id="uf{p.profile_id}" class="input" bind:value={filePick[p.profile_id]} onchange={() => useFile(p)}>
                 <option value="">{slicedFiles.length ? 'Choose one of the model\'s sliced files…' : 'No sliced files yet: upload one'}</option>
-                {#each slicedFiles as f}<option value={f.id}>{f.filename}{f.printer ? ` (${f.printer})` : ''}{(p.approved_file_ids || []).includes(f.id) ? ' ✓' : ''}</option>{/each}
+                {#each slicedFiles as f}<option value={f.id}>{f.filename}{f.printer ? ` (${f.printer})` : ''}{(p.approved_file_ids || []).includes(f.id) ? ' (approved)' : ''}</option>{/each}
               </select></div>
             <button class="btn" onclick={() => pickers[p.profile_id]?.click()} disabled={busy[p.profile_id]}>Upload sliced file…</button>
             <input type="file" class="hidden" accept=".3mf,.gcode" bind:this={pickers[p.profile_id]} onchange={(e) => uploadFor(p, e)} />

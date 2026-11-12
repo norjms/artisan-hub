@@ -559,7 +559,7 @@ class User(Base):
     last_team_id: Mapped[int | None] = mapped_column(ForeignKey("team.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    prefs: Mapped[dict | None] = mapped_column(JSON)                  # personal choices: {"skin", "mode"}
+    prefs: Mapped[dict | None] = mapped_column(JSON)                  # personal choices: {"theme", "reduce_transparency"}
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     @property

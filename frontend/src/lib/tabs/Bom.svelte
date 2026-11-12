@@ -140,7 +140,7 @@
       {#if matches.length}
         <div class="absolute z-10 mt-1 w-full panel shadow-lg max-h-72 overflow-auto">
           {#each matches as x}
-            <button class="w-full text-left px-3 py-2 hover:bg-black/5 text-sm flex justify-between" onclick={() => addPart(x)}>
+            <button class="w-full text-left px-3 py-2 hover:bg-ah-segment text-sm flex justify-between" onclick={() => addPart(x)}>
               <span>{x.name}</span><span class="muted">{x.in_stock} in stock</span>
             </button>
           {/each}

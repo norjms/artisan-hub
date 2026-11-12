@@ -1,4 +1,6 @@
 <script>
+  import { farmName, FarmName } from '$lib/nav.svelte.js';
+  import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
   import { api, fmtMoney, fmtTime, fmtBytes, ago } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
@@ -16,7 +18,7 @@
 
   async function approve(q) {
     if (!confirm(`Approve and send ${q.quantity} x ${q.filename} to the farm?`)) return;
-    await attempt(() => api.post(`/api/quotes/${q.id}/approve`), 'Approved: slicing and sending to Legacy farm'); load();
+    await attempt(() => api.post(`/api/quotes/${q.id}/approve`), `Approved: slicing and sending to ${farmName()}`); load();
   }
   async function refuse(q) {
     await attempt(() => api.post(`/api/quotes/${q.id}/refuse`, { reason }), 'Refused: the customer gets a note; refund the order in WooCommerce');
@@ -36,17 +38,14 @@
   const stCls = { ordered: 'warn', approved: 'ok', refused: 'bad', failed: 'bad', ready: '', slicing: '', expired: '' };
 </script>
 
-<div class="flex flex-wrap items-end gap-3 mb-4">
-  <div class="mr-auto">
-    <h1 class="text-2xl font-bold">Instant quotes</h1>
-    <p class="muted text-sm">Customers upload their own model on the store and get a price straight away. Paid quotes wait here for you before they print.</p>
-  </div>
-  {#if store}<span class="chip {store.product?.status === 'publish' && cfg?.enabled ? 'ok' : ''}">{store.product?.status === 'publish' && cfg?.enabled ? 'open on the store' : 'closed'}</span>{/if}
-</div>
+<Page title="Instant quotes" description="Customers upload their own model on the store and get a price straight away. Paid quotes wait here for you before they print.">
+{#snippet actions()}
+{#if store}<span class="chip {store.product?.status === 'publish' && cfg?.enabled ? 'ok' : ''}">{store.product?.status === 'publish' && cfg?.enabled ? 'open on the store' : 'closed'}</span>{/if}
+{/snippet}
 
-<div class="flex border-b line mb-4">
+<div class="ah-tabs" role="tablist">
   {#each [['review', `To review${d?.waiting.length ? ` (${d.waiting.length})` : ''}`], ['all', 'All quotes'], ['settings', 'Settings']] as [k, l]}
-    <button class="px-4 py-2.5 text-sm font-semibold border-b-2 {view === k ? 'border-brand-600' : 'border-transparent muted'}" onclick={() => (view = k)}>{l}</button>
+    <button role="tab" aria-selected={view === k} onclick={() => (view = k)}>{l}</button>
   {/each}
 </div>
 
@@ -73,7 +72,7 @@
       </div>
     {:else}<div class="panel p-6 muted text-center" style="grid-column: 1 / -1">No paid quotes waiting.</div>{/each}
   </div>
-  <p class="text-xs muted mt-3">Approving slices the model again in the customer's material and colour, uploads it to Legacy farm and queues the pieces on their order. Refusing puts the order on hold with a note to the customer; refund it in WooCommerce.</p>
+  <p class="text-xs muted mt-3">Approving slices the model again in the customer's material and colour, uploads it to {farmName()} and queues the pieces on their order. Refusing puts the order on hold with a note to the customer; refund it in WooCommerce.</p>
 
 {:else if view === 'all'}
   <div class="panel p-4 scroll-x">
@@ -153,3 +152,4 @@
     <p class="text-xs muted mt-2">The model is sliced once in the first offered material; other materials scale its grams by density. Colours tied to a Spoolman filament show as out of stock when there isn't enough left.</p>
   </div>
 {/if}
+</Page>

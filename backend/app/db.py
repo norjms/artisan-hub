@@ -125,6 +125,10 @@ MIGRATIONS: list[tuple[int, str]] = [
     (21, "ALTER TABLE installation ADD COLUMN IF NOT EXISTS installer_key_id integer"),
 ]
 
+# Data migrations written in Python, so they run the same on Postgres and in the tests' SQLite. Numbered from 1001
+# so they never take a number the SQL list above may use next.
+THEME_MIGRATION = 1001     # every saved skin and light/dark mode becomes the glass-dark theme (services.themes)
+
 
 def init_db():
     from . import models  # noqa: F401  (register tables)
@@ -145,5 +149,9 @@ def init_db():
                     c.execute(text(stmt))
             c.execute(text("INSERT INTO schema_version (v) VALUES (:v)"), {"v": v})
         Base.metadata.create_all(c)      # tables a migration rebuilt
+        if THEME_MIGRATION not in done:
+            from .services.themes import migrate_prefs
+            migrate_prefs(c)
+            c.execute(text("INSERT INTO schema_version (v) VALUES (:v)"), {"v": THEME_MIGRATION})
         from .services.teams import bootstrap
         bootstrap(c, fresh)

@@ -1,4 +1,7 @@
 <script>
+  import Page from '$lib/Page.svelte';
+  import Glyph from '$lib/Glyph.svelte';
+  import { farmName, FarmName } from '$lib/nav.svelte.js';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
@@ -60,7 +63,7 @@
   async function restoreIt() { await attempt(() => api.post(`/api/models/${m.id}/restore`), 'Restored'); load(); }
   async function askDelete() { delCode = ''; delInfo = await attempt(() => api.get(`/api/models/${m.id}/delete-check`)); }
   async function doDelete() {
-    await attempt(() => api.post(`/api/models/${m.id}/purge`, { confirm: delCode }), 'Deleting everywhere…');
+    await attempt(() => api.post(`/api/models/${m.id}/purge`, { confirm: delCode }), 'Deleting everywhere');
     goto('/');
   }
   async function fav() {
@@ -69,12 +72,16 @@
   const unitsLabel = (a) => (a ? (a.has_bom === false ? 'No materials set' : `${a.units ?? 0} buildable`) : '');
 </script>
 
+<Page title={m?.name || 'Model'} crumb={m?.code || null} description={m ? `${m.code}, ${m.category || 'Uncategorized'}${m.designer ? `, by ${m.designer}` : ''}` : ''}>
+{#snippet actions()}
+  {#if m}
+    {#if can('models')}<button class="btn" onclick={() => (tab = 'listing')}>Edit</button>{/if}
+    <button class="btn" onclick={fav} aria-pressed={!!m.favorite} title="Favorite"><Glyph name="star" fill={!!m.favorite} />{m.favorite ? 'Favorite' : 'Add to favorites'}</button>
+  {/if}
+{/snippet}
 {#if !m}
-  <div class="muted">Loading…</div>
+  <div class="muted">Loading...</div>
 {:else}
-  <div class="flex items-center gap-2 text-sm muted mb-3">
-    <a href="/" class="hover:underline">Models</a> <span>/</span> <span>{m.category || 'Uncategorized'}</span>
-  </div>
 
   <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(340px,1fr)] gap-5">
     <div><Gallery images={gallery} {archiveCount} bind:showArchive /></div>
@@ -84,25 +91,23 @@
         <div class="flex items-start gap-3">
           <div class="flex-1 min-w-0">
             <div class="text-xs muted font-semibold tracking-wide">{m.code}{#if m.designer} · by {#if m.designer_info?.url}<a class="hover:underline" target="_blank" href={m.designer_info.url}>{m.designer}</a>{:else}{m.designer}{/if}{/if}</div>
-            <div class="flex items-start gap-3 mt-1"><h1 class="text-2xl font-bold leading-tight">{m.name}</h1>
-              {#if can('models')}<button class="btn sm shrink-0 mt-0.5" onclick={() => (tab = 'listing')}>Edit</button>{/if}</div>
+            <div class="ah-card-title mt-1">{m.name}</div>
           </div>
-          <button class="text-2xl" onclick={fav} title="Favorite">{m.favorite ? '★' : '☆'}</button>
         </div>
         <div class="flex flex-wrap gap-1.5 mt-3">
-          {#if p?.live}<span class="chip live">LIVE ON STORE</span>{:else if p?.woo_product_id}<span class="chip">Draft on store</span>{:else}<span class="chip">Not on store</span>{/if}
+          {#if p?.live}<span class="chip live">Live on the store</span>{:else if p?.woo_product_id}<span class="chip">Draft on store</span>{:else}<span class="chip">Not on store</span>{/if}
           <button class="chip {m.license?.problems?.length ? (lc.sell ? 'warn' : 'bad') : 'ok'}" onclick={() => (tab = 'license')} title={m.license?.problems?.join('; ') || m.license?.label}>{lc.label}{m.license?.problems?.length ? (lc.sell ? ': needs designer' : ': no selling') : ''}</button>
           {#if m.license?.ip_flags?.length}<span class="chip bad" title="A design license can't grant rights to someone else's brand or character">IP check: {m.license.ip_flags.join(', ')}</span>{/if}
           {#if m.license?.needs_credit}<span class="chip" title={m.license.credit_line}>Credit on listing</span>{/if}
           {#if m.print_ready}<span class="chip ok">Print-ready file</span>{:else}<span class="chip warn">Needs sliced file</span>{/if}
-          {#if pending}<span class="chip">Syncing…</span>{/if}
+          {#if pending}<span class="chip">Syncing</span>{/if}
           {#if m.status === 'archived'}<span class="chip warn">Archived</span>{/if}
         </div>
 
         {#if p}
           <div class="mt-5 flex items-center gap-4">
             <div class="flex-1">
-              <div class="text-3xl font-bold">{p.price ? fmtMoney(p.price) : '—'}</div>
+              <div class="ah-big">{p.price ? fmtMoney(p.price) : 'No price'}</div>
               <div class="text-xs muted">SKU {p.sku}</div>
             </div>
             <div class="text-right">
@@ -113,11 +118,11 @@
           <div class="mt-4 flex flex-wrap gap-2">
             <button class="btn primary" onclick={push}>{p.woo_product_id ? 'Update store listing' : 'Push to store (draft)'}</button>
             {#if can('store')}<button class="btn" onclick={() => (ordering = true)}>Create order</button>{/if}
-            {#if p.woo_admin_url}<a class="btn" target="_blank" href={p.woo_admin_url}>Edit in Woo</a>{/if}
+            {#if p.woo_admin_url}<a class="btn" target="_blank" href={p.woo_admin_url}>Edit in WooCommerce</a>{/if}
             {#if p.live && p.woo_view_url}<a class="btn" target="_blank" href={p.woo_view_url}>View</a>{/if}
           </div>
           {#if p.woo_error}<div class="mt-3 text-sm" style="color:var(--bad)">Store: {p.woo_error}</div>{/if}
-          {#if p.wt_error}<div class="mt-1 text-sm" style="color:var(--warn)">Legacy farm: {p.wt_error}</div>{/if}
+          {#if p.wt_error}<div class="mt-1 text-sm" style="color:var(--warn)">{FarmName()}: {p.wt_error}</div>{/if}
           {#if p.woo_synced_at}<div class="mt-2 text-xs muted">Last pushed {ago(p.woo_synced_at)} · stock on store {JSON.stringify(p.woo_stock_pushed)}</div>{/if}
         {/if}
       </div>
@@ -181,7 +186,7 @@
                 <li>{delInfo.will_remove.photos} photo(s) and {delInfo.will_remove.files} model file(s) in the hub and library{delInfo.will_remove.library_folder ? '' : ''}</li>
                 {#if delInfo.will_remove.woo_draft}<li>the WooCommerce draft</li>{/if}
                 {#if delInfo.will_remove.dam_photos}<li>{delInfo.will_remove.dam_photos} DAM photo(s){delInfo.will_remove.dam_collection ? ' and its collection' : ''}</li>{/if}
-                {#if delInfo.will_remove.legacy_farm_files || delInfo.will_remove.legacy_farm_mappings}<li>{delInfo.will_remove.legacy_farm_files} Legacy farm file(s), {delInfo.will_remove.legacy_farm_mappings} SKU mapping(s)</li>{/if}
+                {#if delInfo.will_remove.legacy_farm_files || delInfo.will_remove.legacy_farm_mappings}<li>{delInfo.will_remove.legacy_farm_files} file(s) in {farmName()}, {delInfo.will_remove.legacy_farm_mappings} SKU mapping(s)</li>{/if}
                 <li>Manyfold drops it on its next scan</li>
                 <li>License records are kept in an archive folder</li>
                 <li>The library scanner won't re-import it (undo in Settings)</li>
@@ -199,9 +204,9 @@
     </div>
   </div>
 
-  <div class="mt-6 border-b line flex gap-1 scroll-x">
-    {#each [['overview', 'Overview'], ['listing', 'Edit details'], ['colors', 'Colors'], ['bom', 'Materials'], ['print', 'Print'], ['files', `Files (${m.files_all.length})`], ['photos', `Photos (${m.images_all.length})`], ['license', 'License & credit'], ['history', 'History']] as [k, l]}
-      <button class="px-4 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap {tab === k ? 'border-brand-600' : 'border-transparent muted'}" onclick={() => (tab = k)}>{l}</button>
+  <div class="ah-tabs mt-2" role="tablist" aria-label="Model">
+    {#each [['overview', 'Overview'], ['listing', 'Edit details'], ['colors', 'Colours'], ['bom', 'Materials'], ['print', 'Print'], ['files', `Files (${m.files_all.length})`], ['photos', `Photos (${m.images_all.length})`], ['license', 'License and credit'], ['history', 'History']] as [k, l]}
+      <button role="tab" aria-selected={tab === k} onclick={() => (tab = k)}>{l}</button>
     {/each}
   </div>
 
@@ -275,3 +280,4 @@
 {/if}
 
 {#if ordering && m}<CreateOrder model={m} onclose={() => (ordering = false)} />{/if}
+</Page>

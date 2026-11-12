@@ -1,21 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="ah-root" data-theme="glass-dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="dark" />
     <link rel="icon" href="/favicon.svg" />
     <script>
-      // Paint in the person's theme before anything renders (saved choice, else the system's light/dark).
+      // Paint in the person's look before anything renders: glass-dark is the only theme; reduce transparency
+      // follows the device unless they chose on or off (lib/theme.svelte.js keeps these in step).
       (function () {
-        var skin = 'legacy_farm', mode = 'system';
-        try { skin = localStorage.getItem('hub.skin') || skin; mode = localStorage.getItem('hub.mode') || mode; } catch (e) {}
-        var dark = mode === 'dark' || (mode === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.dataset.skin = skin;
-        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        var r = 'auto';
+        try { r = localStorage.getItem('hub.reduce') || r; } catch (e) {}
+        var el = document.documentElement;
+        el.dataset.theme = 'glass-dark';
+        if (r === 'on') el.dataset.transparency = 'off';
+        else if (r === 'off') el.dataset.transparency = 'on';
       })();
     </script>
-    <title>Artisan Hub</title>
+    <title>ArtisanHub</title>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

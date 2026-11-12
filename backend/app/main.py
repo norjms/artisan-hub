@@ -9,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import settings
 from .db import init_db
 from . import auth
-from .routers import account, catalog, ops, sourcing, slicing, mcp, oauth, teams, farm, quotes, plugin, mobile, mobile_control, phone_pages, plates, manual_orders, clipper, setup
+from .routers import account, catalog, ops, sourcing, slicing, mcp, oauth, teams, farm, quotes, plugin, mobile, mobile_control, phone_pages, plates, manual_orders, clipper, setup, nav
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -34,6 +34,7 @@ app.include_router(plugin.router)
 app.include_router(mobile.router)
 app.include_router(mobile_control.router)
 app.include_router(clipper.router)        # browser add-on: add a model by URL, send files
+app.include_router(nav.router)            # the sidebar as data, shared with ArtisanHub Farm
 app.include_router(phone_pages.pages)   # /pair, /get-app, /.well-known app links (public)
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -49,10 +50,28 @@ if (STATIC / "_app").exists():
     app.mount("/_app", StaticFiles(directory=STATIC / "_app"), name="app-assets")
 
 
+# Pages that moved when the sidebar was regrouped (People, Devices, printer profiles under Slicing). Old links,
+# bookmarks and QR codes keep working; the query string is kept (a TV's /tv?code=... still fills in its code).
+MOVED = {"team": "/people", "platform": "/people?view=hub", "add-on": "/devices", "tv": "/devices",
+         "printers": "/slicing?tab=printers"}
+
+
+def moved(path: str, query: str) -> str | None:
+    target = MOVED.get(path.strip("/"))
+    if target is None:
+        return None
+    if query:
+        target += ("&" if "?" in target else "?") + query
+    return target
+
+
 @app.get("/{path:path}", include_in_schema=False)
 def spa(path: str, request: Request):
     if path.startswith(("api/", "media/", "hooks/", "public/", "auth/")):
         return JSONResponse({"detail": "not found"}, status_code=404)
+    target = moved(path, request.url.query)
+    if target:
+        return RedirectResponse(target, status_code=301)
     f = STATIC / path
     if path and f.is_file():
         if path.startswith("theme/"):    # shared look for the supporting apps; fonts are also used by the sign-in pages

@@ -5,8 +5,11 @@
   import { attempt, toast } from '$lib/toast.svelte.js';
   import { can } from '$lib/session.svelte.js';
   import { stateLabel, stateCls, ENGINE } from '$lib/slicing.js';
+  import Page from '$lib/Page.svelte';
+  import PrinterProfiles from '$lib/slicing/PrinterProfiles.svelte';
 
-  let view = $state(page.url.searchParams.get('view') || 'review');
+  let view = $state(page.url.searchParams.get('tab') || page.url.searchParams.get('view') || 'review');
+  function pick(k) { view = k; const u = new URL(location.href); u.searchParams.delete('view'); u.searchParams.set('tab', k); history.replaceState(history.state, '', u); if (k !== 'printers') load(); }
   let g = $state(null);
   let pr = $state(null);
   let q = $state('');
@@ -104,18 +107,17 @@
   const KIND = { failed: ['Failed', 'bad'], stale: ['Out of date', 'warn'], problem: ['Problem', 'warn'], review: ['Needs review', 'warn'], unsliced: ['Not sliced', ''] };
 </script>
 
-<h1 class="text-2xl font-bold mb-1">Slicing</h1>
-<p class="muted text-sm mb-4 max-w-3xl">Every model on every printer. A new slice waits for review; once approved it is the file that printer uses.
-  A slice goes out of date when its files, the printer, the colours or the slicer version change.</p>
-
-<div class="border-b line flex gap-1 mb-4">
-  {#each [['review', `Review${rv ? ` (${rv.total})` : ''}`], ['grid', 'All models'], ['problems', `Problems${pr ? ` (${pr.items.length})` : ''}`]] as [k, l]}
-    <button class="px-4 py-2.5 text-sm font-semibold border-b-2 {view === k ? 'border-brand-600' : 'border-transparent muted'}" onclick={() => { view = k; load(); }}>{l}</button>
+<Page title="Slicing" description="Every model on every printer. A new slice waits for review; once approved it is the file that printer uses. A slice goes out of date when its files, the printer, the colours or the slicer version change.">
+<div class="ah-tabs" role="tablist" aria-label="Slicing">
+  {#each [['review', `Review${rv ? ` (${rv.total})` : ''}`], ['grid', 'All models'], ['problems', `Problems${pr ? ` (${pr.items.length})` : ''}`], ['printers', 'Printer profiles']] as [k, l]}
+    <button role="tab" aria-selected={view === k} onclick={() => pick(k)}>{l}</button>
   {/each}
 </div>
 
-{#if view === 'review'}
-  <div class="flex flex-wrap items-center gap-2 mb-3 text-sm">
+{#if view === 'printers'}
+  <PrinterProfiles />
+{:else if view === 'review'}
+  <div class="flex flex-wrap items-center gap-2 text-sm" style="flex:none">
     <select class="input w-auto" bind:value={rvPrinter} onchange={() => { rvOffset = 0; loadReview(); }}>
       <option value="">Every printer</option>{#each rv?.printers || [] as p}<option value={p.id}>{p.name}</option>{/each}
     </select>
@@ -141,13 +143,13 @@
   {#if rv}
     <div class="grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
       {#each rv.items as x, i (x.id)}
-        <div id="rv-{x.id}" class="panel p-3 text-sm {focus === i ? 'ring-2 ring-brand-600' : ''} {rvSel.has(x.id) ? 'bg-brand-50 dark:bg-brand-100' : ''}"
+        <div id="rv-{x.id}" class="panel p-3 text-sm {focus === i ? 'ring-2 ring-ah-accent' : ''} {rvSel.has(x.id) ? 'bg-ah-chip-live-bg' : ''}"
           role="presentation" onclick={() => (focus = i)}>
           <div class="relative">
-            {#if x.previews[0]}<img src={x.previews[0]} alt="Slice preview of {x.code}" class="w-full aspect-[4/3] object-contain rounded-lg bg-black/5" loading="lazy" />
-            {:else}<div class="w-full aspect-[4/3] rounded-lg bg-black/5 grid place-items-center muted text-xs">no preview</div>{/if}
+            {#if x.previews[0]}<img src={x.previews[0]} alt="Slice preview of {x.code}" class="w-full aspect-[4/3] object-contain rounded-lg bg-ah-panel" loading="lazy" />
+            {:else}<div class="w-full aspect-[4/3] rounded-lg bg-ah-panel grid place-items-center muted text-xs">no preview</div>{/if}
             {#if x.photo}<img src={x.photo} alt="Photo of {x.code}" class="absolute right-2 bottom-2 w-16 h-16 object-cover rounded-md border-2 border-white shadow" loading="lazy" />{/if}
-            <label class="absolute left-2 top-2 bg-white/90 dark:bg-black/60 rounded px-1.5 py-0.5"><input type="checkbox" checked={rvSel.has(x.id)} onchange={() => rvToggle(x.id)} aria-label="Select {x.code}" /></label>
+            <label class="absolute left-2 top-2 bg-ah-solid-panel rounded px-1.5 py-0.5"><input type="checkbox" checked={rvSel.has(x.id)} onchange={() => rvToggle(x.id)} aria-label="Select {x.code}" /></label>
           </div>
           <div class="mt-2 flex items-start gap-2">
             <a class="font-semibold hover:underline min-w-0" href="/models/{x.model_id}?tab=print"><span class="block truncate">{x.code} {x.name}</span></a>
@@ -210,7 +212,7 @@
   {/if}
   {#if g}
     {#if !g.printers.length}
-      <div class="panel p-5 text-sm">No printers yet. Add one on the <a class="underline" href="/printers">Printers</a> page.</div>
+      <div class="panel p-5 text-sm">No printers yet. Add one on the <a class="underline" href="/slicing?tab=printers">Printers</a> tab of Slicing.</div>
     {:else}
       <div class="panel scroll-x">
         <table class="grid text-sm">
@@ -270,3 +272,4 @@
     </table>
   </div>
 {/if}
+</Page>

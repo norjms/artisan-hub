@@ -1,4 +1,5 @@
 <script>
+  import { Icon } from 'artisanhub-ui';
   // First-run setup: the hub's own front end over /api/setup/v1, so the hub is complete without the
   // installer (invariants 3 and 4). The installer drives the same API from outside.
   import { onMount } from 'svelte';
@@ -52,12 +53,12 @@
 
 <svelte:head><title>Set up ArtisanHub</title></svelte:head>
 
-<div class="min-h-[70vh] grid place-items-center">
-  <div class="panel p-6 w-full max-w-lg">
-    <div class="flex items-center gap-2 font-bold text-lg mb-4"><img src="/favicon.svg" alt="" class="w-7 h-7" /> ArtisanHub</div>
-
+<div style="width:min(520px,100%)">
+  <div class="flex items-center justify-center gap-[10px]" style="margin-bottom:18px"><span class="ah-icon-tile" style="background:var(--ah-accent);color:var(--ah-on-accent)"><Icon name="cube" /></span><span class="ah-sidebar__brand" style="padding:0">ArtisanHub</span></div>
+  <section class="ah-glass ah-card" style="padding:28px;gap:16px">
+    
     {#if done}
-      <h1 class="text-xl font-semibold mb-2">Setup is done</h1>
+      <h1 class="ah-title" style="font-size:30px">Setup is done</h1>
       <p class="muted mb-4">
         Your workspace <b>{done.team.name}</b> runs <b>{done.farm === 'openprinthq' ? 'OpenPrintHQ' : 'Legacy farm'}</b>.
         This API key lets a script or the installer connect your other services. It is shown once.
@@ -68,10 +69,10 @@
       </div>
       <a class="btn primary w-full inline-block text-center" href="/auth/login">Sign in</a>
     {:else if status && status.setup_complete}
-      <h1 class="text-xl font-semibold mb-2">This hub is already set up</h1>
+      <h1 class="ah-title" style="font-size:30px">This hub is already set up</h1>
       <a class="btn primary w-full inline-block text-center" href="/">Go to ArtisanHub</a>
     {:else if status}
-      <h1 class="text-xl font-semibold mb-2">Set up this hub</h1>
+      <h1 class="ah-title" style="font-size:30px">Set up this hub</h1>
       <p class="muted mb-4">
         The setup token is in the hub's log from its first start, or is the HUB_SETUP_TOKEN the hub was started with.
       </p>
@@ -101,5 +102,5 @@
     {:else}
       <p class="muted">Checking the hub...</p>
     {/if}
-  </div>
+  </section>
 </div>

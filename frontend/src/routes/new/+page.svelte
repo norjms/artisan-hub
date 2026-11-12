@@ -1,4 +1,5 @@
 <script>
+  import Page from '$lib/Page.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
@@ -28,11 +29,10 @@
   }
 </script>
 
-<h1 class="text-2xl font-bold mb-1">Add a model</h1>
-<p class="muted text-sm mb-5">Drop everything you have: photos, STL/3MF/G-code. Print time and grams are read from sliced files. You can also drop a folder into your team's inbox folder or call <code>POST /api/v1/ingest</code>.</p>
-<div class="mb-5 max-w-3xl"><SourceImport initial={linkIn} auto={!!linkIn} /></div>
-<h2 class="font-semibold mb-3">Or add one by hand</h2>
-<div class="grid lg:grid-cols-2 gap-5">
+<Page title="Add model" description="Drop everything you have: photos, STL, 3MF and G-code. Print time and grams are read from sliced files. You can also drop a folder into your team's inbox folder or call POST /api/v1/ingest.">
+<SourceImport initial={linkIn} auto={!!linkIn} />
+<h2 class="ah-card-title">Or add one by hand</h2>
+<div class="grid grid-cols-2 gap-[14px]">
   <div class="panel p-5 space-y-3">
     <div><label class="lbl" for="n">Name</label><input id="n" class="input" bind:value={f.name} placeholder="Ribbed planter, small" /></div>
     <div class="grid grid-cols-2 gap-3">
@@ -64,6 +64,7 @@
     <ul class="mt-3 text-sm space-y-1 max-h-72 overflow-auto">
       {#each files as x, i}<li class="flex justify-between"><span class="truncate">{x.name}</span><button class="muted" onclick={() => files.splice(i, 1)}>remove</button></li>{/each}
     </ul>
-    <button class="btn primary w-full mt-4" onclick={create} disabled={busy || !f.name}>{busy ? 'Creating…' : 'Create model'}</button>
+    <button class="btn primary w-full mt-4" onclick={create} disabled={busy || !f.name}>{busy ? 'Creating...' : 'Create model'}</button>
   </div>
 </div>
+</Page>

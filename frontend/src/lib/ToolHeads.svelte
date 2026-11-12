@@ -31,7 +31,7 @@
     {#each extruders as n}
       <div class="flex flex-wrap items-center gap-2">
         <span class="muted text-xs w-12 capitalize">{n.position || `T${n.extruder_index + 1}`}</span>
-        <span class="chip {n.active ? 'ok' : ''}" title={n.active ? 'printing with this one' : ''}>{short(n)}{n.active ? ' ●' : ''}</span>
+        <span class="chip {n.active ? 'ok' : ''}" title={n.active ? 'printing with this one' : ''}>{short(n)}{#if n.active}<span class="sr-only"> (printing with this one)</span><svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="3" fill="currentColor" /></svg>{/if}</span>
         {#if n.position === 'right' || (n.position !== 'left' && extruders.length === 1)}
           <span class="muted text-xs">rack:</span>
           {#each groups as [k, c]}<button class="chip" onclick={() => (open = !open)} title="Show each rack slot">{k}{c > 1 ? ` ×${c}` : ''}</button>{/each}

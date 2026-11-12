@@ -521,6 +521,83 @@ def platform_cancel_invite(invite_id: int, db: Session = Depends(get_db), p: Pri
     return {"ok": True}
 
 
+# ---------- OrcaSlicer in the browser: who may open it ----------
+
+ORCA = "OrcaSlicer in the browser"
+
+
+def _orcaslicer():
+    """The LLDAP group for OrcaSlicer in the browser and the LLDAP client, or (None, None) when this hub has none:
+    the installation runs no OrcaSlicer in the browser (HUB_ORCASLICER_GROUP empty) or no LLDAP."""
+    group = (settings().orcaslicer_group or "").strip()
+    if not group:
+        return None, None
+    from ..clients import lldap_api
+    ld = lldap_api.client()
+    return (group, ld) if ld else (None, None)
+
+
+def _directory_error(e: Exception) -> str:
+    from ..clients.base import ApiError
+    why = e.message if isinstance(e, ApiError) else type(e).__name__
+    return f"The hub's user directory (LLDAP) did not take the change: {why}"
+
+
+@router.get("/platform/apps/orcaslicer")
+def orcaslicer_access(db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
+    """Who may open OrcaSlicer in the browser: the hub's owners always, and everyone in its LLDAP group."""
+    group, ld = _orcaslicer()
+    if not group:
+        return {"available": False}
+    users = list(db.execute(select(User).order_by(User.id)).scalars())
+    owners = [u.id for u in users if u.platform_admin]
+    try:
+        emails = {(x.get("email") or "").strip().lower() for x in ld.group_members(group)}
+    except Exception as e:  # noqa: BLE001
+        return {"available": True, "group": group, "owners": owners, "allowed": owners, "error": _directory_error(e)}
+    allowed = [u.id for u in users if u.platform_admin or (u.email or "").strip().lower() in emails]
+    return {"available": True, "group": group, "owners": owners, "allowed": allowed, "error": None}
+
+
+class OrcaIn(BaseModel):
+    allowed: bool
+
+
+@router.put("/platform/users/{user_id}/orcaslicer")
+def set_orcaslicer_access(user_id: int, body: OrcaIn, db: Session = Depends(get_db),
+                          p: Principal = Depends(need("platform"))):
+    """Give someone OrcaSlicer in the browser, or take it away: they join or leave its LLDAP group. Asking for what
+    is already so changes nothing."""
+    group, ld = _orcaslicer()
+    if not group:
+        raise HTTPException(404, f"This hub doesn't run {ORCA}")
+    u = db.get(User, user_id)
+    if not u:
+        raise HTTPException(404)
+    if u.platform_admin:
+        raise HTTPException(400, f"Hub owners can always open {ORCA}")
+    if not u.email:
+        raise HTTPException(400, f"{u.label} has no email, so their login can't be found")
+    try:
+        login = ld.user_by_email(u.email)
+        if not login:
+            raise HTTPException(400, f"{u.label} has no login in the hub's user directory")
+        has = group in {g.get("displayName") for g in login.get("groups") or []}
+        if body.allowed and not has:
+            ld.add_to_group(login["id"], group)
+        elif has and not body.allowed:
+            ld.remove_from_group(login["id"], group)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, _directory_error(e))
+    changed = has != body.allowed
+    if changed:
+        event(db, "team", f"{u.label}: {ORCA} {'on' if body.allowed else 'off'}", actor=p.actor)
+        db.commit()
+    return {"user_id": u.id, "allowed": body.allowed, "changed": changed}
+
+
 @router.post("/platform/users/{user_id}/remove")
 def platform_remove_person(user_id: int, db: Session = Depends(get_db), p: Principal = Depends(need("platform"))):
     """Take someone out of every team and out of the hub-users group. Teams they alone own are kept, ownerless,

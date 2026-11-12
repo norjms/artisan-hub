@@ -3,7 +3,7 @@
   // the hub owner's People and teams page (/team and /platform redirect here; the owner's part is ?view=hub).
   import { onMount } from 'svelte';
   import { page } from '$app/state';
-  import { Icon } from 'artisanhub-ui';
+  import { Icon, Toggle } from 'artisanhub-ui';
   import { api, ago } from '$lib/api.js';
   import { attempt, toast } from '$lib/toast.svelte.js';
   import { session, loadMe, can, ROLE_LABEL, ROLE_HELP } from '$lib/session.svelte.js';
@@ -71,6 +71,25 @@
     data = await api.get('/api/platform/teams');
     users = await api.get('/api/platform/users');
     invites = await api.get('/api/platform/invites');
+    await loadOrca();
+  }
+  // OrcaSlicer in the browser, when this installation runs it: who may open it. The hub's owners always may; anyone
+  // else when the owner turns it on here (they join its group in the hub's user directory).
+  let orca = $state({ available: false });
+  let orcaBusy = $state(null);
+  let orcaOn = $state({});       // the switches, by person: rebuilt from the hub's answer after every change
+  async function loadOrca() {
+    try { orca = await api.get('/api/platform/apps/orcaslicer'); } catch { orca = { available: false }; }
+    orcaOn = Object.fromEntries(users.map((u) => [u.id, (orca.allowed || []).includes(u.id)]));
+  }
+  async function setOrca(u, on) {
+    orcaBusy = u.id;
+    try {
+      await attempt(() => api.put(`/api/platform/users/${u.id}/orcaslicer`, { allowed: on }),
+        on ? `${u.name} can now open OrcaSlicer in the browser` : `${u.name} can no longer open OrcaSlicer in the browser`);
+    } catch { /* attempt shows the error */ }
+    orcaBusy = null;
+    await loadOrca();
   }
   function openDirs(x) { edit = { id: x.id, name: x.name, deltaprints: x.source_dirs.deltaprints || '', inbox: x.source_dirs.inbox || '' }; }
   async function saveDirs() {
@@ -244,16 +263,29 @@
     </section>
     <section class="ah-glass ah-card" style="flex:none">
       <h2 class="ah-card-title">Everyone with a sign-in</h2>
+      {#if orca.available}
+        <p class="ah-muted" style="margin-top:-6px">OrcaSlicer in the browser opens at /apps/orcaslicer/. Hub owners can always open it; turn it on for anyone else who should.</p>
+        {#if orca.error}<div class="ah-banner ah-banner--bad" role="alert">{orca.error}</div>{/if}
+      {/if}
       {#if pwLink}
         <div class="ah-banner ah-banner--live" style="flex-direction:column;align-items:flex-start">
           <div><b>Send {pwLink.name} this link</b> <button class="btn sm" onclick={() => copy(pwLink.link)}>Copy</button></div><code style="word-break:break-all">{pwLink.link}</code>
           <span>It lets them choose a new password for the login {pwLink.user}. It works once, for {pwLink.expires_in_minutes} minutes, and replaces any older link.</span>
         </div>
       {/if}
-      <table class="grid"><thead><tr><th>Person</th><th>Teams</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+      <table class="grid"><thead><tr><th>Person</th><th>Teams</th>{#if orca.available}<th>OrcaSlicer in the browser</th>{/if}<th>Last sign-in</th><th></th></tr></thead><tbody>
         {#each users as u}
           <tr><td>{u.name}{#if u.platform_admin} <span class="chip live">Hub owner</span>{/if}<div class="ah-muted">{u.email || ''}</div></td>
             <td>{u.teams.map((m) => `${teamName(m.team_id)} (${ROLE_LABEL[m.role]})`).join(', ') || 'None'}</td>
+            {#if orca.available}
+              <td><div class="flex items-center gap-2">
+                {#if u.platform_admin}
+                  <Toggle checked={true} disabled label="OrcaSlicer in the browser for {u.name}" /><span class="ah-muted">Hub owners always have it</span>
+                {:else}
+                  <Toggle bind:checked={orcaOn[u.id]} disabled={orcaBusy === u.id || !!orca.error} label="OrcaSlicer in the browser for {u.name}" onchange={(on) => setOrca(u, on)} />
+                {/if}
+              </div></td>
+            {/if}
             <td class="ah-muted">{u.last_login_at ? ago(u.last_login_at) : 'Never'}</td>
             <td style="text-align:right;white-space:nowrap">{#if u.email}<button class="btn sm ghost" onclick={() => passwordLink(u)}>Make password link</button>{/if}
               {#if !u.platform_admin}<button class="btn sm danger" onclick={() => removePerson(u)}>Remove from hub</button>{/if}</td></tr>

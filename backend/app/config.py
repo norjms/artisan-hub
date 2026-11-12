@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     lldap_user: str = "hub"
     lldap_password: str = ""
     lldap_group: str = "hub-users"
+    # OrcaSlicer in the browser, when the installation runs it behind Authelia: the LLDAP group whose members may
+    # open it besides the hub's owners. The owner turns it on or off per person on People. Empty = not run here.
+    orcaslicer_group: str = ""
     oidc_logout_url: str = ""                   # where sign-out sends people; empty = the provider's end-session
 
     # WooCommerce

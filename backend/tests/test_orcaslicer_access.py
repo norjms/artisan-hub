@@ -164,3 +164,11 @@ def test_a_hub_without_it_shows_no_switch(orca, real_auth, monkeypatch):
     assert hub.get("/api/platform/apps/orcaslicer").json() == {"available": False}
     r = hub.put(f"/api/platform/users/{orca['member']}/orcaslicer", json={"allowed": True})
     assert r.status_code == 404 and orca["lldap"].calls == []
+
+
+def test_people_is_told_when_each_person_has_a_desktop_of_their_own(orca, real_auth, monkeypatch):
+    from app.config import settings
+    hub = as_user(orca["boss"])
+    assert hub.get("/api/platform/apps/orcaslicer").json()["desktops"] is False
+    monkeypatch.setattr(settings(), "orcaslicer_desktops", "per-person")
+    assert hub.get("/api/platform/apps/orcaslicer").json()["desktops"] is True

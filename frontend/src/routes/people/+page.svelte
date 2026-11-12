@@ -81,6 +81,35 @@
   async function loadOrca() {
     try { orca = await api.get('/api/platform/apps/orcaslicer'); } catch { orca = { available: false }; }
     orcaOn = Object.fromEntries(users.map((u) => [u.id, (orca.allowed || []).includes(u.id)]));
+    await loadDesks();
+  }
+  // With a desktop for each person, their files stay after they leave until the owner removes them here. The list
+  // and the removal come from the installation itself, at the desktop's own address, as the signed-in owner.
+  const DESKS = '/apps/orcaslicer/_desktop/homes';
+  let desks = $state(null);
+  let deskBusy = $state(null);
+  async function loadDesks() {
+    if (!orca.desktops) { desks = null; return; }
+    try {
+      const r = await fetch(DESKS, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      const body = await r.json().catch(() => null);
+      desks = r.ok && Array.isArray(body) ? { rows: body, error: null }
+        : { rows: [], error: body?.error?.message || 'The installation did not list the desktops. Open OrcaSlicer once, then reload this page.' };
+    } catch { desks = { rows: [], error: 'The installation did not answer about the desktops.' }; }
+  }
+  async function removeDesk(d) {
+    if (!confirm(`Remove ${d.name}'s OrcaSlicer desktop and its files? Their printers, settings and files in OrcaSlicer are deleted for good.`)) return;
+    deskBusy = d.person;
+    try {
+      await attempt(async () => {
+        const r = await fetch(`${DESKS}/${encodeURIComponent(d.person)}`, { method: 'DELETE', credentials: 'same-origin',
+          headers: { Accept: 'application/json', 'X-AHI-Desktop': '1' } });
+        const body = await r.json().catch(() => null);
+        if (!r.ok || !Array.isArray(body)) throw new Error(body?.error?.message || 'The installation did not remove the desktop.');
+        desks = { rows: body, error: null };
+      }, `${d.name}'s desktop files were removed`);
+    } catch { /* attempt shows the error */ }
+    deskBusy = null;
   }
   async function setOrca(u, on) {
     orcaBusy = u.id;
@@ -266,6 +295,22 @@
       {#if orca.available}
         <p class="ah-muted" style="margin-top:-6px">OrcaSlicer in the browser opens at /apps/orcaslicer/. Hub owners can always open it; turn it on for anyone else who should.</p>
         {#if orca.error}<div class="ah-banner ah-banner--bad" role="alert">{orca.error}</div>{/if}
+        {#if desks}
+          <details data-testid="desktop-files">
+            <summary>Desktop files ({desks.rows.length}): each person's own OrcaSlicer desktop</summary>
+            <p class="ah-muted">A desktop's printers, settings and files stay after its person leaves the hub, until you remove them here.</p>
+            {#if desks.error}<div class="ah-banner ah-banner--bad" role="alert">{desks.error}</div>{/if}
+            {#if desks.rows.length}
+              <table class="grid"><thead><tr><th>Desktop of</th><th>State</th><th></th></tr></thead><tbody>
+                {#each desks.rows as d (d.person)}
+                  <tr><td>{d.name}<div class="ah-muted">{d.person}</div></td>
+                    <td>{#if d.running}<span class="chip live">Open now</span>{:else if !d.current}<span class="chip">Left the hub</span>{:else}<span class="ah-muted">Stopped</span>{/if}</td>
+                    <td style="text-align:right"><button class="btn sm danger" disabled={deskBusy === d.person} onclick={() => removeDesk(d)}>Remove files</button></td></tr>
+                {/each}
+              </tbody></table>
+            {:else if !desks.error}<p class="ah-muted">Nobody has opened a desktop yet.</p>{/if}
+          </details>
+        {/if}
       {/if}
       {#if pwLink}
         <div class="ah-banner ah-banner--live" style="flex-direction:column;align-items:flex-start">

@@ -549,14 +549,18 @@ def orcaslicer_access(db: Session = Depends(get_db), p: Principal = Depends(need
     group, ld = _orcaslicer()
     if not group:
         return {"available": False}
+    # Each person's own desktop: People lists their files, from the installation itself, in the owner's browser.
+    desktops = (settings().orcaslicer_desktops or "").strip() == "per-person"
     users = list(db.execute(select(User).order_by(User.id)).scalars())
     owners = [u.id for u in users if u.platform_admin]
     try:
         emails = {(x.get("email") or "").strip().lower() for x in ld.group_members(group)}
     except Exception as e:  # noqa: BLE001
-        return {"available": True, "group": group, "owners": owners, "allowed": owners, "error": _directory_error(e)}
+        return {"available": True, "group": group, "owners": owners, "allowed": owners, "error": _directory_error(e),
+                "desktops": desktops}
     allowed = [u.id for u in users if u.platform_admin or (u.email or "").strip().lower() in emails]
-    return {"available": True, "group": group, "owners": owners, "allowed": allowed, "error": None}
+    return {"available": True, "group": group, "owners": owners, "allowed": allowed, "error": None,
+            "desktops": desktops}
 
 
 class OrcaIn(BaseModel):

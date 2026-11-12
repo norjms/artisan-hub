@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # Its outbox ("Send to hub" in the desktop), mounted in the worker by the installer: files saved there become
     # models in the library (services/orcaslicer_outbox.py). Empty = not run here.
     orcaslicer_outbox: str = ""
+    # "per-person" when the installation gives each person a desktop of their own: People then lists the desktops'
+    # files, which the owner removes once their person has gone. Empty = one desktop everyone shares.
+    orcaslicer_desktops: str = ""
     oidc_logout_url: str = ""                   # where sign-out sends people; empty = the provider's end-session
 
     # WooCommerce

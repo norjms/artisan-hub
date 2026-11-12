@@ -50,15 +50,27 @@ def farm_info() -> dict:
 
 
 def resolve(nav: dict, farm: dict) -> dict:
-    """Every item gets "app": "hub" or "farm", and farm items the farm's own link when there is one."""
+    """Every item gets "app": "hub" or "farm", and farm items the farm's own link when there is one. Items the
+    list marks "app": "farm" are pages only the farm has (the Farm group): without a link to the farm's own pages
+    they are left out, and so is a group left with no items."""
     out = copy.deepcopy(nav)
     out.pop("notes", None)
+    groups = []
     for g in out["groups"]:
+        items = []
         for it in g["items"]:
-            it["app"] = "hub"
+            farm_only = it.get("app") == "farm"
             if it.get("farm_path") and farm.get("app"):
                 it["href"] = farm["app"] + it["farm_path"]
                 it["app"] = "farm"
+            elif farm_only:
+                continue
+            else:
+                it["app"] = "hub"
+            items.append(it)
+        if items:
+            groups.append({**g, "items": items})
+    out["groups"] = groups
     return out
 
 

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "product": "ArtisanHub",
-  "notes": "The hub's sidebar, one list for the hub and the Farm. href is a path on the hub. Items with farm_path open the installed farm's own page (farm app base + farm_path) when the hub reports one, else the hub's page at href. badge names a count in /api/stats; perm is the permission an item needs.",
+  "notes": "The hub's sidebar, one list for the hub and the Farm. href is a path on the hub. Items with farm_path open the installed farm's own page (farm app base + farm_path) when the hub reports one, else the hub's page at href. Items whose app is farm are pages only the farm has: they have no href and are left out unless the installed farm's own pages can be linked. badge names a count in /api/stats; perm is the permission an item needs.",
   "groups": [
     {
       "label": "Print",
@@ -12,6 +12,18 @@
         { "id": "queue", "label": "Print queue", "href": "/farm?view=queue", "icon": "list-queue", "farm_path": "/app/queue" },
         { "id": "filament", "label": "Filament", "href": "/farm?view=filament", "icon": "spool", "farm_path": "/app/filament" },
         { "id": "slicing", "label": "Slicing", "href": "/slicing", "icon": "layers" }
+      ]
+    },
+    {
+      "label": "Farm",
+      "items": [
+        { "id": "files", "label": "Files", "icon": "cube", "app": "farm", "farm_path": "/app/files" },
+        { "id": "slicer", "label": "Slicer", "icon": "layers", "app": "farm", "farm_path": "/app/slicer" },
+        { "id": "projects", "label": "Projects", "icon": "box", "app": "farm", "farm_path": "/app/projects" },
+        { "id": "statistics", "label": "Statistics", "icon": "chart", "app": "farm", "farm_path": "/app/statistics" },
+        { "id": "print-reports", "label": "Print reports", "icon": "file-text", "app": "farm", "farm_path": "/app/reports" },
+        { "id": "timelapses", "label": "Timelapses", "icon": "film", "app": "farm", "farm_path": "/app/timelapses" },
+        { "id": "farm-settings", "label": "Farm settings", "icon": "cog", "app": "farm", "farm_path": "/app/settings" }
       ]
     },
     {

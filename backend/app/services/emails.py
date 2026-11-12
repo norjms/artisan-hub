@@ -6,7 +6,7 @@ loaded; each program falls back to its own. Every colour of text keeps 4.5:1 on 
 text says the same, for programs that show only text.
 
 Every email the hub sends is made here: invitations (with the link to choose a password when the person has
-no login yet), farm alerts, running out of supplies, and the two license notices.
+no login yet), password resets, farm alerts, running out of supplies, and the two license notices.
 """
 from __future__ import annotations
 
@@ -171,6 +171,22 @@ def invite(by: str, target: str, role: str | None, link: str, signup_url: str | 
         buttons=buttons,
         note=f"Use the email address this was sent to. The links work for {days} days.",
         reason="You get this because someone invited you to this hub.",
+        sender=_host(public_url),
+    )
+
+
+def password_reset(link: str, minutes: int, public_url: str) -> Email:
+    """A one-time link to choose a new password, for someone who asked for one on the hub's reset page."""
+    return Email(
+        subject="Reset your ArtisanHub password",
+        heading="Reset your password",
+        paragraphs=[
+            "Someone asked for a new password for your ArtisanHub login. If it was you, choose one with the link below.",
+            "If it was not you, ignore this email: your password stays as it is.",
+        ],
+        buttons=[("Choose a new password", link)],
+        note=f"The link works once, for {minutes} minutes. Asking again replaces it with a new one.",
+        reason="You get this because someone asked to reset the password of your login.",
         sender=_host(public_url),
     )
 

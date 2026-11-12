@@ -17,6 +17,7 @@ def _all():
         emails.out_of_supplies("Gyroid vase", "GV-01", ["PETG black: need 120 per unit, available 40"], URL),
         emails.license_reminder(["Printables: 'Club' ends 2026-12-01 (20 days). 4 models, 2 live."], URL),
         emails.license_changes([("M-12 Dragon: CC-BY -> CC-BY-NC (live in the store)", f"{URL}/models/12")], URL),
+        emails.password_reset(f"{URL}/account/password/xyz", 30, URL),
     ]
 
 

@@ -2,8 +2,12 @@ import NAV from '../../static/nav.json';
 import { api } from './api.js';
 
 // The sidebar: one list (static/nav.json) that the hub draws and serves at /api/nav/v1 for ArtisanHub Farm.
-// The server's copy adds what only it knows: the installed farm's own links and the installation's name.
-export const nav = $state({ groups: NAV.groups.map((g) => ({ ...g, items: g.items.map((i) => ({ ...i, app: 'hub' })) })), farm: null, installation: null });
+// The server's copy adds what only it knows: the installed farm's own links and the installation's name, and with
+// them the Farm group (pages only the farm has, app "farm" in the list), which the built-in copy leaves out.
+const hubOnly = NAV.groups
+  .map((g) => ({ ...g, items: g.items.filter((i) => i.app !== 'farm').map((i) => ({ ...i, app: 'hub' })) }))
+  .filter((g) => g.items.length);
+export const nav = $state({ groups: hubOnly, farm: null, installation: null });
 
 export async function loadNav() {
   try {

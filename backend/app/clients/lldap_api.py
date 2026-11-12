@@ -22,7 +22,7 @@ class LldapClient:
         self.url = url.rstrip("/")
         self.ldap_url = ldap_url
         self.base_dn = base_dn
-        self.user = user
+        self.bind_user = user   # the hub's own LLDAP account (not self.user: that is the lookup below)
         self.password = password
         self.group = group
         self._token: str | None = None
@@ -35,7 +35,7 @@ class LldapClient:
         if self._token and time.monotonic() - self._token_at < 600:
             return self._token
         try:
-            r = httpx.post(f"{self.url}/auth/simple/login", json={"username": self.user, "password": self.password},
+            r = httpx.post(f"{self.url}/auth/simple/login", json={"username": self.bind_user, "password": self.password},
                            timeout=15)
         except httpx.HTTPError as e:
             raise ApiError(self.service, None, f"LLDAP did not answer: {type(e).__name__}") from None
@@ -114,7 +114,7 @@ class LldapClient:
         from ldap3 import Connection, Server
         from ldap3.core.exceptions import LDAPException
 
-        admin_dn = f"uid={self.user},ou=people,{self.base_dn}"
+        admin_dn = f"uid={self.bind_user},ou=people,{self.base_dn}"
         user_dn = f"uid={uid},ou=people,{self.base_dn}"
         try:
             conn = Connection(Server(self.ldap_url, connect_timeout=10), admin_dn, self.password, auto_bind=True,

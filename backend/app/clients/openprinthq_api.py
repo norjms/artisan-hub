@@ -73,7 +73,7 @@ def _priority(value) -> int:
 class OpenPrintHQClient(BaseClient, FarmBackend):
     service = "openprinthq"
     kind = "openprinthq"
-    label = "OpenPrintHQ"
+    label = "ArtisanHub Farm"
     BASE_CAPABILITIES = frozenset({"files", "jobs", "queue", "priority", "cancel", "printers", "commands", "snapshot",
                                    "filament", "webhooks", "library_folders", "maintenance", "preflight",
                                    "queue_stats", "retries", "spool_library", "locations", "nozzles", "pin_printer"})
@@ -130,6 +130,10 @@ class OpenPrintHQClient(BaseClient, FarmBackend):
     def e(self, method, path, **kw):
         """One engine call through the control plane."""
         return self.request(method, API + path, **kw)
+
+    def push_printer_access(self, body: dict):
+        """Who may see and send to which printer, for ArtisanHub Farm in team mode (services/printer_access.py)."""
+        return self.request("PUT", "/api/team/printer-access", json=body, retries=2, expect_json=False)
 
     # ---- connection ----
     def ping(self):

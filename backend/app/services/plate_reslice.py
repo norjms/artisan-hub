@@ -185,7 +185,7 @@ def consider(db: Session, c, fj: FarmJob) -> str:
 def scan(db: Session, limit: int = 20) -> dict:
     from ..clients import farm, farm_kind
     if farm_kind() != "openprinthq":
-        return {"skipped": "plate reslicing needs OpenPrintHQ as the farm"}
+        return {"skipped": "plate reslicing needs ArtisanHub Farm as the farm"}
     c = farm()
     out: dict[str, int] = {}
     jobs = db.execute(select(FarmJob).where(FarmJob.status.in_(PENDING), FarmJob.model_id.is_not(None))

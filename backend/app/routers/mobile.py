@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import Principal, new_api_key, need
 from ..db import get_db
+from ..services import printer_access
 from ..jobs import event
 from ..models import (PERMS, ApiKey, Event, FarmJob, Membership, Order, PartCache, PlateCheck, Product, Quote,
                       SpoolCache, Team, User)
@@ -95,7 +96,8 @@ def overview(db: Session = Depends(get_db), p: Principal = Depends(need("view"))
            "printers": None, "errors": {}}
     try:
         from ..services import printer_status
-        out["printers"] = [_printer(x) for x in printer_status.annotate(db, _wt().printers().get("printers", []))]
+        out["printers"] = [_printer(x) for x in printer_status.annotate(
+            db, printer_access.visible(db, p, _wt().printers().get("printers", [])))]
     except Exception as e:  # noqa: BLE001
         out["errors"]["printers"] = str(getattr(e, "message", e))[:200]
     try:
@@ -175,7 +177,8 @@ def printers(db: Session = Depends(get_db), p: Principal = Depends(need("view"))
     from ..services import printer_status
     try:
         prof = _profiles(db)
-        return {"printers": [_printer(x, prof) for x in printer_status.annotate(db, _wt().printers().get("printers", []))]}
+        return {"printers": [_printer(x, prof) for x in printer_status.annotate(
+            db, printer_access.visible(db, p, _wt().printers().get("printers", [])))]}
     except Exception as e:  # noqa: BLE001
         _err(e)
 
@@ -184,6 +187,7 @@ def printers(db: Session = Depends(get_db), p: Principal = Depends(need("view"))
 def printer(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """One printer. With OpenPrintHQ as the farm it adds nozzles, filament paths, what each slot has loaded, and
     the job fields the app draws (progress, layer, total_layers, job_name, eta, cover_available)."""
+    printer_access.require(db, p, name)
     try:
         f = _wt()
         out = dict(f.printer(str(name)))
@@ -209,8 +213,9 @@ def printer(name: str, db: Session = Depends(get_db), p: Principal = Depends(nee
 
 
 @router.get("/printers/{name}/snapshot")
-def printer_snapshot(name: str, p: Principal = Depends(need("view"))):
+def printer_snapshot(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """The printer's camera, one JPEG frame."""
+    printer_access.require(db, p, name)
     try:
         data = _wt().snapshot(name)
     except Exception as e:  # noqa: BLE001
@@ -224,9 +229,10 @@ STREAM_SECONDS = 600       # one live view at most; the app reopens it
 
 
 @router.get("/printers/{name}/stream")
-def printer_stream(name: str, p: Principal = Depends(need("view"))):
+def printer_stream(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """The printer's camera, live as a stream of JPEG frames (multipart MJPEG, about 2 to 3 a second: as fast as
     the farm hands out frames). Ends after 10 minutes. Works anywhere the hub does (no direct camera access)."""
+    printer_access.require(db, p, name)
     import time
     from fastapi.responses import StreamingResponse
     try:
@@ -270,6 +276,7 @@ PRINTER_COMMANDS = {"set_ready", "clear_ready", "pause", "resume", "cancel", "st
 @router.post("/printers/{name}/command")
 def printer_command(name: str, body: CommandIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
     """Watchtower's printer verbs (set_ready, pause, resume, cancel, ...). Watchtower decides what each printer supports."""
+    printer_access.require(db, p, name)
     if body.command not in PRINTER_COMMANDS:
         raise HTTPException(400, f"command must be one of {', '.join(sorted(PRINTER_COMMANDS))}")
     try:
@@ -673,7 +680,7 @@ def tiles(spool_low_g: float = 150, db: Session = Depends(get_db), p: Principal 
     out: dict = {"api": API_VERSION, "time": now().isoformat(), "errors": {}}
 
     try:
-        prs = [_printer(x) for x in _wt().printers().get("printers", [])]
+        prs = [_printer(x) for x in printer_access.visible(db, p, _wt().printers().get("printers", []))]
         def st(x):
             if x.get("online") is False or x.get("state") in ("offline", "disconnected"):
                 return "offline"

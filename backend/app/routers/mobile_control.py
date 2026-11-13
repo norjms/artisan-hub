@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import Principal, need
 from ..db import get_db
+from ..services import printer_access
 from ..jobs import event
 from ..services import spool_library as lib
 
@@ -44,7 +45,7 @@ def _farm():
     from ..clients import farm
     f = farm()
     if f.kind != "openprinthq":
-        raise HTTPException(400, "this needs OpenPrintHQ as the team's farm")
+        raise HTTPException(400, "this needs ArtisanHub Farm as the team's farm")
     return f
 
 
@@ -337,6 +338,7 @@ class HideIn(BaseModel):
 @router.post("/printers/{name}/hide-error")
 def printer_hide_error(name: str, body: HideIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
     """A nuisance code: never an error again, for this printer or (all_printers) every printer."""
+    printer_access.require(db, p, name)
     from ..services import printer_status
     try:
         row = printer_status.hide(db, body.code, None if body.all_printers else name, _actor(p))
@@ -743,8 +745,9 @@ def _pid(name: str) -> tuple:
 
 
 @router.get("/printers/{name}/cover")
-def printer_cover(name: str, view: str | None = None, p: Principal = Depends(need("view"))):
+def printer_cover(name: str, view: str | None = None, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """The current job's sliced plate image (PNG); 404 when the printer is idle. view: top | side (default)."""
+    printer_access.require(db, p, name)
     if view not in (None, "", "top", "side"):
         raise HTTPException(422, "view is top or side")
     f, pid = _pid(name)
@@ -759,7 +762,8 @@ def printer_cover(name: str, view: str | None = None, p: Principal = Depends(nee
 
 
 @router.get("/printers/{name}/nozzles")
-def printer_nozzles(name: str, p: Principal = Depends(need("view"))):
+def printer_nozzles(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
+    printer_access.require(db, p, name)
     f, pid = _pid(name)
     try:
         return lib._call(f.nozzles, pid)
@@ -776,6 +780,7 @@ class NozzleIn(BaseModel):
 @router.put("/printers/{name}/nozzles/{extruder_index}")
 def printer_nozzle_put(name: str, extruder_index: int, body: NozzleIn, db: Session = Depends(get_db),
                        p: Principal = Depends(need("farm"))):
+    printer_access.require(db, p, name)
     f, pid = _pid(name)
     try:
         out = lib._call(f.set_nozzle, pid, extruder_index, body.model_dump())
@@ -789,6 +794,7 @@ def printer_nozzle_put(name: str, extruder_index: int, body: NozzleIn, db: Sessi
 
 @router.delete("/printers/{name}/nozzles/{extruder_index}")
 def printer_nozzle_delete(name: str, extruder_index: int, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
+    printer_access.require(db, p, name)
     f, pid = _pid(name)
     try:
         return lib._call(f.clear_nozzle, pid, extruder_index)
@@ -797,7 +803,8 @@ def printer_nozzle_delete(name: str, extruder_index: int, db: Session = Depends(
 
 
 @router.get("/printers/{name}/filament-paths")
-def printer_paths(name: str, p: Principal = Depends(need("view"))):
+def printer_paths(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
+    printer_access.require(db, p, name)
     f, pid = _pid(name)
     try:
         return lib._call(f.filament_paths, pid)
@@ -819,6 +826,7 @@ class PathsIn(BaseModel):
 @router.put("/printers/{name}/filament-paths")
 def printer_paths_put(name: str, body: PathsIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
     """track_switch_mode auto | installed | absent; slots replaces the hand-set paths ([] clears, leave out to keep)."""
+    printer_access.require(db, p, name)
     f, pid = _pid(name)
     try:
         out = lib._call(f.set_filament_paths, pid, body.model_dump(exclude_unset=True))
@@ -830,7 +838,8 @@ def printer_paths_put(name: str, body: PathsIn, db: Session = Depends(get_db), p
 
 
 @router.get("/printers/{name}/loaded")
-def printer_loaded(name: str, p: Principal = Depends(need("view"))):
+def printer_loaded(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
+    printer_access.require(db, p, name)
     f, pid = _pid(name)
     try:
         return lib._call(f.loaded, pid)
@@ -1127,6 +1136,7 @@ def _profile_for(db: Session, name: str):
 @router.get("/printers/{name}/plate")
 def printer_plate(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """The plate fitted on a printer, its usual plate, and the catalog to pick from (grouped by maker)."""
+    printer_access.require(db, p, name)
     from ..models import BuildPlate
     from ..services import plates
     from .plates import plate_dict
@@ -1147,6 +1157,7 @@ class PlateSetIn(BaseModel):
 @router.put("/printers/{name}/plate")
 def printer_plate_set(name: str, body: PlateSetIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
     """Record a plate swap: updates the farm's plate check and the Bambu marker detection, and logs maintenance."""
+    printer_access.require(db, p, name)
     from ..jobs import enqueue
     from ..models import BuildPlate
     from ..services import plates
@@ -1169,6 +1180,7 @@ class ServiceIn(BaseModel):
 @router.post("/printers/{name}/service")
 def printer_service(name: str, body: ServiceIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
     """Out of service (no new jobs; a running print carries on) or back in service."""
+    printer_access.require(db, p, name)
     try:
         _farm().set_down(name, body.down, (body.reason or "").strip() or f"Set from the app by {_actor(p)}")
     except Exception as e:  # noqa: BLE001
@@ -1271,21 +1283,23 @@ def order_invoice(order_id: int, db: Session = Depends(get_db), p: Principal = D
 
 @router.get("/alarms")
 def alarms(state: str = "active", printer: str | None = None, unacknowledged: bool = False,
-           p: Principal = Depends(need("view"))):
+           db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """The farm's alarms: active ones worst first (fatal, serious, warning), or history with state=cleared|all."""
     if state not in ("active", "cleared", "all"):
         raise HTTPException(400, "state is active, cleared or all")
+    printer_access.require(db, p, printer)
     try:
-        return {"alarms": _farm().alarms(state=state, printer=printer, unacknowledged=unacknowledged)}
+        return {"alarms": printer_access.visible_items(
+            db, p, _farm().alarms(state=state, printer=printer, unacknowledged=unacknowledged))}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, str(getattr(e, "message", e))[:300])
 
 
 @router.get("/alarms/summary")
-def alarm_summary(p: Principal = Depends(need("view"))):
+def alarm_summary(db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """Counts for a badge: active, unacknowledged, by_severity, and the printers with any (ids and names)."""
     try:
-        return _farm().alarm_summary()
+        return printer_access.alarm_summary(db, p, _farm().alarm_summary())
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, str(getattr(e, "message", e))[:300])
 
@@ -1303,6 +1317,7 @@ def alarm_ack(alarm_id: int, db: Session = Depends(get_db), p: Principal = Depen
 
 @router.post("/printers/{name}/alarms/ack")
 def printer_alarms_ack(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
+    printer_access.require(db, p, name)
     try:
         out = _farm().ack_printer_alarms(name, _actor(p))
     except Exception as e:  # noqa: BLE001

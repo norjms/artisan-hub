@@ -199,6 +199,12 @@ def _orcaslicer_outbox(db, job):
     return orcaslicer_outbox.take_in(db)
 
 
+@handler("farm.push_printer_access")
+def _push_printer_access(db, job):
+    from .services import printer_access
+    return printer_access.push(db, job.team_id)
+
+
 @handler("alert.out_of_supplies")
 def _alert(db, job):
     p = db.get(Product, job.payload["product_id"])
@@ -1033,6 +1039,7 @@ every("woo.poll_orders", 600, needs="woo")
 every("library.scan_deltaprints", 900, needs=_has_dir("deltaprints"))
 every("library.scan_inbox", 120, needs=_has_dir("inbox"))
 every("library.orcaslicer_outbox", 30, needs=_orcaslicer_outbox_here)
+every("farm.push_printer_access", 300, needs="openprinthq")
 every("manyfold.link", 900, needs="manyfold")
 every("license.recheck", 86400, needs=_has_models)
 every("license.grants_check", 6 * 3600, needs=_has_models)

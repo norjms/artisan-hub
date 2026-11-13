@@ -21,12 +21,13 @@ KINDS = {
             "API user and its private key (ResourceSpace > My account > API key). Host is the public name the DAM expects."),
     "watchtower": ("Watchtower", ["url", "public_url", "username"], ["api_key", "password"],
                    "Public API key plus a login for the shop and library pages."),
-    "openprinthq": ("OpenPrintHQ", ["url", "public_url", "target_group", "use_as_farm", "use_for_spools", "verify_tls"],
+    "openprinthq": ("ArtisanHub Farm", ["url", "public_url", "target_group", "use_as_farm", "use_for_spools", "verify_tls"],
                     ["api_key"],
-                    "The OpenPrintHQ address and an API key with control scope (OpenPrintHQ, Settings, API keys). "
+                    "The ArtisanHub Farm address and an API key with control scope (ArtisanHub Farm, Settings, API "
+                    "keys). "
                     "Jobs go to the printer group named in target_group, or else to printers of the model a file was "
-                    "sliced for. With Watchtower connected too, use_as_farm picks OpenPrintHQ as the farm, and "
-                    "use_for_spools keeps the spool library in OpenPrintHQ while Watchtower runs the farm."),
+                    "sliced for. With Watchtower connected too, use_as_farm picks ArtisanHub Farm as the farm, and "
+                    "use_for_spools keeps the spool library in ArtisanHub Farm while Watchtower runs the farm."),
     "inventree": ("InvenTree", ["url", "host", "public_url"], ["token"], "API token of a user with part and stock access."),
     "spoolman": ("Spoolman", ["url", "public_url"], [], "Spoolman base URL."),
     "manyfold": ("Manyfold", ["url", "public_url", "library_path"], ["client_id", "client_secret"],

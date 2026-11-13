@@ -605,6 +605,9 @@ class Membership(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("hub_user.id", ondelete="CASCADE"), index=True)
     role: Mapped[str] = mapped_column(String(10), default="member")
     perms: Mapped[list | None] = mapped_column(JSON)          # None = the role's set; owners always have all
+    # The farm's printers this person may see and send to (services/printer_access.py): None = all of them, the
+    # default; owners always have all.
+    printers: Mapped[list | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     team: Mapped[Team] = relationship(back_populates="members")
 

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import need, Principal
 from ..db import get_db
+from ..services import printer_access
 from ..kv import set_setting
 from ..models import FarmJob, PlateCheck
 from ..services import farm
@@ -19,8 +20,10 @@ def _actor(p: Principal) -> str:
 
 
 @router.get("/api/farm")
-def overview(live: bool = True, db: Session = Depends(get_db), _: Principal = Depends(need("view"))):
-    return farm.overview(db, live_printers=live)
+def overview(live: bool = True, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
+    out = farm.overview(db, live_printers=live)
+    out["printers"] = printer_access.visible(db, p, out.get("printers"))
+    return out
 
 
 class HideCodeIn(BaseModel):
@@ -308,9 +311,11 @@ def spool_sync_settings(body: SpoolSyncSettings, db: Session = Depends(get_db), 
 # ---------- timeline and order dates ----------
 
 @router.get("/api/farm/timeline")
-def timeline(db: Session = Depends(get_db), _: Principal = Depends(need("view"))):
+def timeline(db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     from ..services import schedule
-    return schedule.build(db)
+    out = schedule.build(db)
+    out["lanes"] = printer_access.visible_items(db, p, out.get("lanes"), id_field="printer_id", name_fields=("printer",))
+    return out
 
 
 class DueIn(BaseModel):
@@ -623,6 +628,7 @@ class FarmCommandIn(BaseModel):
 @router.post("/api/farm/printers/{name}/command")
 def farm_printer_command(name: str, body: FarmCommandIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
     """Clear the plate, pause, resume, cancel, light, home, preheat, cool down: whatever the farm supports."""
+    printer_access.require(db, p, name)
     from .mobile import PRINTER_COMMANDS
     from ..jobs import event
     if body.command not in PRINTER_COMMANDS:
@@ -644,6 +650,7 @@ class FarmServiceIn(BaseModel):
 @router.post("/api/farm/printers/{name}/service")
 def farm_printer_service(name: str, body: FarmServiceIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
     """Out of service (no new jobs; a running print carries on) or back in service."""
+    printer_access.require(db, p, name)
     from ..jobs import event
     try:
         farm._client().set_down(name, body.down, (body.reason or "").strip() or f"Set from the Farm page by {_actor(p)}")
@@ -703,16 +710,18 @@ def _alarm_call(fn):
 
 @router.get("/api/farm/alarms")
 def farm_alarms(state: str = "active", printer: str | None = None, unacknowledged: bool = False,
-                p: Principal = Depends(need("view"))):
+                db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """What every printer is reporting: active alarms worst first, or history (state=cleared|all)."""
     if state not in ("active", "cleared", "all"):
         raise HTTPException(400, "state is active, cleared or all")
-    return {"alarms": _alarm_call(lambda: farm._client().alarms(state=state, printer=printer, unacknowledged=unacknowledged))}
+    printer_access.require(db, p, printer)
+    return {"alarms": printer_access.visible_items(db, p, _alarm_call(
+        lambda: farm._client().alarms(state=state, printer=printer, unacknowledged=unacknowledged)))}
 
 
 @router.get("/api/farm/alarms/summary")
-def farm_alarm_summary(p: Principal = Depends(need("view"))):
-    return _alarm_call(lambda: farm._client().alarm_summary())
+def farm_alarm_summary(db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
+    return printer_access.alarm_summary(db, p, _alarm_call(lambda: farm._client().alarm_summary()))
 
 
 @router.post("/api/farm/alarms/{alarm_id}/ack")
@@ -726,6 +735,7 @@ def farm_alarm_ack(alarm_id: int, db: Session = Depends(get_db), p: Principal = 
 
 @router.post("/api/farm/printers/{name}/alarms/ack")
 def farm_printer_alarms_ack(name: str, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
+    printer_access.require(db, p, name)
     from ..jobs import event
     out = _alarm_call(lambda: farm._client().ack_printer_alarms(name, _actor(p)))
     event(db, "farm", f"{name}: alarms acknowledged from the Farm page", actor=_actor(p))

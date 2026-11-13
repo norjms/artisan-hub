@@ -38,3 +38,8 @@ Notable changes to Artisan Hub. Versions follow the tags of this repository.
   always write. The installation reads the list (`GET /api/platform/shares`, with its own key) when it starts someone's
   desktop and opens what they may use under Files, Shared. Removing a folder marks it; its files go only when the
   owner confirms on the installer's summary.
+- Printers are shared by the team, and the owner may narrow them per person on People: all printers (the default,
+  also for anyone new) or a chosen list. Owners always have every printer. The hub leaves other printers out of every
+  listing (web, phone API, alarms, timeline, plates) and answers 404 for them, and hands the list to ArtisanHub Farm
+  (`PUT /api/team/printer-access`), so the farm and OrcaSlicer's print host offer each person only their own.
+- The farm is called ArtisanHub Farm in the hub's pages, messages and connection settings.

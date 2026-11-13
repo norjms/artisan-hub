@@ -235,7 +235,7 @@ def sync_printer_locations(db: Session, force: bool = False) -> dict:
     import time
     from ..kv import setting, set_setting
     if not farm_library():
-        return {"skipped": "OpenPrintHQ is not the farm"}
+        return {"skipped": "ArtisanHub Farm is not the farm"}
     c = _ophq()
     online = sorted(p["name"] for p in c.printers().get("printers", []) if p.get("online"))
     before = set(setting(db, "ophq_online_printers") or [])
@@ -278,7 +278,7 @@ def get_spool(db: Session, spool_id: int) -> dict:
 
 def location_by_code(code: str) -> dict:
     if not farm_library():
-        raise LibraryError(400, "locations with codes need OpenPrintHQ as the farm")
+        raise LibraryError(400, "locations with codes need ArtisanHub Farm as the farm")
     return _call(_ophq().location_by_code, code)
 
 
@@ -437,7 +437,7 @@ def archive(db: Session, spool_id: int) -> dict:
 
 def move(db: Session, spool_id: int, location_code: str) -> dict:
     if not farm_library():
-        raise LibraryError(400, "moving by location code needs OpenPrintHQ as the farm (use PATCH location instead)")
+        raise LibraryError(400, "moving by location code needs ArtisanHub Farm as the farm (use PATCH location instead)")
     c = _ophq()
     loc = _call(c.location_by_code, location_code)
     out = _call(c.lib_patch_spool, spool_id, {"location_id": loc["id"]})
@@ -449,7 +449,7 @@ def assign(db: Session, spool_id: int, target_code: str | None = None, printer: 
            ams_id: int | None = None, tray_id: int | None = None, extruder_index: int | None = None) -> dict:
     """Put a spool in a printer slot: by a slot location's code (L...) or by printer name + ams_id + tray_id."""
     if not farm_library():
-        raise LibraryError(400, "slot assignments need OpenPrintHQ as the farm")
+        raise LibraryError(400, "slot assignments need ArtisanHub Farm as the farm")
     c = _ophq()
     if target_code:
         loc = _call(c.location_by_code, target_code)
@@ -471,7 +471,7 @@ def assign(db: Session, spool_id: int, target_code: str | None = None, printer: 
 
 def unassign(db: Session, spool_id: int) -> dict:
     if not farm_library():
-        raise LibraryError(400, "slot assignments need OpenPrintHQ as the farm")
+        raise LibraryError(400, "slot assignments need ArtisanHub Farm as the farm")
     c = _ophq()
     _call(c.lib_unassign, spool_id)
     return farm_spool_dict(_call(c.lib_spool, spool_id), _context(db, c))
@@ -583,7 +583,7 @@ def migrate_to_farm(db: Session, dry_run: bool = False, disable: bool = True) ->
     from ..models import BomFilament, Connection, FarmLibraryMigration as Mig, Variant
     from .connections import forget
     if not farm_library():
-        raise LibraryError(400, "OpenPrintHQ is not this team's farm: connect it and mark it use_as_farm first")
+        raise LibraryError(400, "ArtisanHub Farm is not this team's farm: connect it and mark it use_as_farm first")
     sm = spoolman()
     c = _ophq()
     src_spools = sm.spools(allow_archived=True)

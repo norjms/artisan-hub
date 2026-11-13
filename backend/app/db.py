@@ -123,6 +123,7 @@ MIGRATIONS: list[tuple[int, str]] = [
          "ALTER TABLE slice_result ADD COLUMN IF NOT EXISTS source varchar(12)"),
     # password links (password_link is a new table, create_all) and the key setup minted
     (21, "ALTER TABLE installation ADD COLUMN IF NOT EXISTS installer_key_id integer"),
+    (22, "ALTER TABLE membership ADD COLUMN IF NOT EXISTS printers json"),
 ]
 
 # Data migrations written in Python, so they run the same on Postgres and in the tests' SQLite. Numbered from 1001

@@ -24,7 +24,15 @@ def _iso(d):
 def _member_view(m: Membership, u: User) -> dict:
     return {"user_id": u.id, "name": u.label, "email": u.email, "username": u.username, "role": m.role,
             "perms": m.effective_perms, "custom": m.perms is not None and m.role != "owner",
-            "joined_at": _iso(m.created_at), "last_login_at": _iso(u.last_login_at)}
+            "joined_at": _iso(m.created_at), "last_login_at": _iso(u.last_login_at),
+            # the farm's printers they may see and send to: "all", or the chosen printers' keys (owners: all)
+            "printers": "all" if (m.role == "owner" or m.printers is None) else list(m.printers)}
+
+
+def _push_printers(db: Session):
+    """People changed: ArtisanHub Farm learns who may use which printers (services/printer_access.py)."""
+    from ..services import printer_access
+    printer_access.push_soon(db)
 
 
 def _owners_left(db: Session, team_id: int, excluding: int | None = None) -> int:
@@ -165,6 +173,48 @@ def set_member(user_id: int, body: MemberIn, db: Session = Depends(get_db), p: P
         dropped = [x for x in old[1] if x not in m.effective_perms]
         event(db, "team", f"{u.label}: permissions" + (f" +{','.join(added)}" if added else "")
               + (f" -{','.join(dropped)}" if dropped else ""), actor=p.actor)
+    _push_printers(db)
+    db.commit()
+    return _member_view(m, u)
+
+
+class PrintersIn(BaseModel):
+    printers: list[str] | str = "all"
+
+
+def _printer_owner(p: Principal):
+    if p.get("role") != "owner" and not p.get("platform_admin"):
+        raise HTTPException(403, "only an owner can choose who uses which printers")
+
+
+@router.get("/team/printers")
+def team_printers(p: Principal = Depends(need("people"))):
+    """The farm's printers to choose from on People (id and name)."""
+    from ..services import printer_access
+    try:
+        return {"printers": [{"id": printer_access.key(x), "name": x.get("name")} for x in printer_access.farm_printers()]}
+    except Exception as e:  # noqa: BLE001
+        return {"printers": [], "error": str(getattr(e, "message", e))[:200]}
+
+
+@router.put("/team/members/{user_id}/printers")
+def set_member_printers(user_id: int, body: PrintersIn, db: Session = Depends(get_db), p: Principal = Depends(need("people"))):
+    """Which of the farm's printers a person may see and send to: all of them, or a chosen list (B32)."""
+    from ..services import printer_access
+    _printer_owner(p)
+    m = tsvc.membership(db, p.team_id, user_id)
+    if not m:
+        raise HTTPException(404)
+    if m.role == "owner":
+        raise HTTPException(400, "owners always have every printer")
+    try:
+        m.printers = printer_access.clean(body.printers)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    u = db.get(User, user_id)
+    event(db, "team", f"{u.label}: printers " + ("all" if m.printers is None else (", ".join(m.printers) or "none")),
+          actor=p.actor)
+    printer_access.push_soon(db)
     db.commit()
     return _member_view(m, u)
 
@@ -184,6 +234,7 @@ def remove_member(user_id: int, db: Session = Depends(get_db), p: Principal = De
     db.delete(m)
     _revoke_access(db, p.team_id, user_id)
     event(db, "team", f"Removed {u.label} from the team", actor=p.actor)
+    _push_printers(db)
     db.commit()
     signout = tsvc.drop_hub_access_if_unused(db, u)
     return {"ok": True, "hub_access_removed": signout}
@@ -199,6 +250,7 @@ def leave(db: Session = Depends(get_db), p: Principal = Depends(need("read"))):
         raise HTTPException(400, "make someone else an owner before you leave")
     db.delete(m)
     _revoke_access(db, p.team_id, uid)
+    _push_printers(db)
     db.commit()
     tsvc.drop_hub_access_if_unused(db, db.get(User, uid))
     return {"ok": True}
@@ -302,6 +354,7 @@ def invite_accept(token: str, request: Request, db: Session = Depends(get_db), u
         raise HTTPException(403, str(e))
     bind_session(db, inv.team_id)
     event(db, "team", f"{user.label} joined as {m.role}", actor=user.username or user.email)
+    _push_printers(db)
     db.commit()
     request.session["team_id"] = inv.team_id
     return {"team": {"id": inv.team_id, "name": tsvc.invite_target(inv), "role": m.role}}

@@ -27,7 +27,36 @@
   // roles this person may hand out: never one that includes a permission they don't hold
   const grantable = $derived(t ? ROLES.filter((r) => (r === 'owner' ? isOwner : t.role_perms[r].every((x) => mine.includes(x)))) : []);
 
-  async function load() { t = await api.get('/api/team'); name = t.name; }
+  async function load() {
+    t = await api.get('/api/team'); name = t.name;
+    if (t.role === 'owner') loadPrinters();   // owners hold every permission, People's included
+  }
+
+  // ---- printers: everyone shares the farm's printers; the owner may narrow them per person (all by default)
+  let farmPrinters = $state(null);  // [{ id, name }] from the farm, null until loaded
+  let choosing = $state(null);      // { member, all, ids }
+  let printerBusy = $state(false);
+  async function loadPrinters() {
+    try { farmPrinters = (await api.get('/api/team/printers')).printers || []; } catch { farmPrinters = []; }
+  }
+  function printersText(m) {
+    if (m.role === 'owner' || m.printers === 'all') return 'All';
+    const n = m.printers.length;
+    return n === 0 ? 'None' : `${n} of ${farmPrinters?.length ?? n}`;
+  }
+  function openPrinters(m) {
+    choosing = { member: m, all: m.printers === 'all', ids: m.printers === 'all' ? (farmPrinters || []).map((x) => x.id) : [...m.printers] };
+  }
+  function togglePrinter(id, on) { choosing.ids = on ? [...new Set([...choosing.ids, id])] : choosing.ids.filter((x) => x !== id); }
+  async function savePrinters() {
+    printerBusy = true;
+    const body = { printers: choosing.all ? 'all' : choosing.ids };
+    try {
+      await attempt(() => api.put(`/api/team/members/${choosing.member.user_id}/printers`, body), 'Printers saved');
+      choosing = null;
+      load();
+    } catch { /* the toast said why */ } finally { printerBusy = false; }
+  }
   async function rename() { await attempt(() => api.patch('/api/team', { name }), 'Renamed'); await loadMe(); load(); }
   function openPerms(m) { editing = { member: m, role: m.role, perms: [...m.perms], custom: m.custom }; }
   function roleChanged() { editing.perms = [...t.role_perms[editing.role]]; }
@@ -259,15 +288,18 @@
       {/if}
       <section class="ah-glass ah-card" style="flex:1 0 auto;min-height:220px">
         <h2 class="ah-card-title">{t.members.length} {t.members.length === 1 ? 'person' : 'people'}</h2>
-        <table class="grid"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Permissions</th><th>Signed in</th><th></th></tr></thead><tbody>
+        <table class="grid"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Permissions</th>{#if farmPrinters?.length}<th>Printers</th>{/if}<th>Signed in</th><th></th></tr></thead><tbody>
           {#each t.members as m}
             <tr>
               <td>{m.name}{#if m.user_id === meId} <span class="chip">You</span>{/if}</td>
-              <td class="ah-secondary">{m.email || ''}</td>
+              <td class="ah-secondary" style="word-break:break-all">{m.email || ''}</td>
               <td><span class="chip {m.role === 'owner' ? 'live' : ''}">{ROLE_LABEL[m.role]}</span></td>
               <td>{m.role === 'owner' ? 'All' : permCount(m)}{#if m.custom} <span class="chip warn">Custom</span>{/if}</td>
+              {#if farmPrinters?.length}
+                <td style="white-space:nowrap">{#if m.role === 'owner'}All{:else}<button class="btn sm ghost" onclick={() => openPrinters(m)} aria-label="Choose printers for {m.name}">{printersText(m)}</button>{/if}</td>
+              {/if}
               <td class="ah-muted">{m.last_login_at ? ago(m.last_login_at) : 'Never'}</td>
-              <td style="white-space:nowrap;text-align:right">
+              <td style="text-align:right">
                 {#if can('people') && m.user_id !== meId && (isOwner || m.role !== 'owner')}
                   <button class="btn sm ghost" onclick={() => openPerms(m)}>Change role</button>
                   <button class="btn sm danger" onclick={() => remove(m)}>Remove</button>
@@ -278,6 +310,7 @@
           {#each can('invite') ? t.invites || [] : [] as i}
             <tr><td>{i.name || i.email}</td><td class="ah-secondary">{i.email}</td><td><span class="chip warn">Invited</span></td>
               <td>{ROLE_LABEL[i.role]}{#if i.perms} <span class="chip warn">Custom</span>{/if}</td>
+              {#if farmPrinters?.length}<td class="ah-muted">All</td>{/if}
               <td class="ah-muted">{i.expired ? 'Invite expired' : 'Sent ' + ago(i.created_at)}{i.needs_account ? ', no login yet' : ''}</td>
               <td style="text-align:right"><button class="btn sm ghost" onclick={() => revoke(i)}>Cancel invite</button></td></tr>
           {/each}
@@ -444,6 +477,28 @@
       <div class="ah-field"><label for="dp">DeltaPrints library (scanned every 15 min)</label><input id="dp" class="input" bind:value={edit.deltaprints} placeholder="{data.source_root}/..." /></div>
       <div class="ah-field"><label for="ib">Drop box (imported every 2 min)</label><input id="ib" class="input" bind:value={edit.inbox} placeholder="{data.source_root}/..." /></div>
       <div class="flex gap-2 justify-end"><button type="button" class="btn" onclick={() => (edit = null)}>Cancel</button><button class="btn primary">Save</button></div>
+    </form>
+  </div>
+{/if}
+
+{#if choosing}
+  <div class="ah-dialog-back" role="presentation" onclick={(e) => e.target === e.currentTarget && (choosing = null)}>
+    <form class="ah-dialog" role="dialog" aria-modal="true" aria-label="Printers for {choosing.member.name}" onsubmit={(e) => { e.preventDefault(); savePrinters(); }}>
+      <h3 class="ah-card-title">Printers for {choosing.member.name}</h3>
+      <p class="ah-muted">The printers they see and can send to, in the hub, the farm, the phone app and OrcaSlicer. Owners always have every printer.</p>
+      <label class="flex items-center gap-2"><input type="radio" name="pall" checked={choosing.all} onchange={() => (choosing.all = true)} /> All printers, including ones added later</label>
+      <label class="flex items-center gap-2"><input type="radio" name="pall" checked={!choosing.all} onchange={() => (choosing.all = false)} /> Only the printers chosen below</label>
+      <div style="max-height:240px;overflow:auto;padding-left:24px">
+        {#each farmPrinters || [] as pr (pr.id)}
+          <label class="flex items-center gap-2"><input type="checkbox" disabled={choosing.all} checked={choosing.all || choosing.ids.includes(pr.id)}
+            onchange={(e) => togglePrinter(pr.id, e.currentTarget.checked)} /> {pr.name}</label>
+        {/each}
+      </div>
+      {#if !choosing.all && !choosing.ids.length}<p class="ah-muted">With none chosen they see no printers.</p>{/if}
+      <div class="flex gap-2 justify-end">
+        <button type="button" class="btn ghost" onclick={() => (choosing = null)}>Cancel</button>
+        <button type="submit" class="btn primary" disabled={printerBusy}>Save printers</button>
+      </div>
     </form>
   </div>
 {/if}

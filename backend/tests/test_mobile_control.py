@@ -906,10 +906,10 @@ def test_quotes_carry_the_customer(key):
 def test_webhook_event_text_is_readable():
     from app.routers.ops import ophq_event_text
     t = ophq_event_text("test", {"title": "OpenPrintHQ Test", "message": "Hello from OpenPrintHQ", "extra": {"a": 1}})
-    assert t == "OpenPrintHQ test message: OpenPrintHQ Test - Hello from OpenPrintHQ" and "{" not in t
+    assert t == "ArtisanHub Farm test message: OpenPrintHQ Test - Hello from OpenPrintHQ" and "{" not in t
     assert ophq_event_text("print_complete", {"printer": "H2D", "filename": "Vase.3mf"}) == \
-        "OpenPrintHQ print complete: H2D - Vase.3mf"
-    assert ophq_event_text("", {}) == "OpenPrintHQ event"
+        "ArtisanHub Farm print complete: H2D - Vase.3mf"
+    assert ophq_event_text("", {}) == "ArtisanHub Farm event"
 
 
 def test_apple_app_site_association_lists_label_links(monkeypatch):

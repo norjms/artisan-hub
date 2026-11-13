@@ -612,7 +612,7 @@ def ophq_event_text(name: str, body: dict) -> str:
         v = body.get(k) if isinstance(body, dict) else None
         if isinstance(v, (str, int, float)) and str(v).strip() and str(v) not in parts:
             parts.append(str(v).strip())
-    text = f"OpenPrintHQ {label.lower() if label != 'Test message' else 'test message'}"
+    text = f"ArtisanHub Farm {label.lower() if label != 'Test message' else 'test message'}"
     if parts:
         text += ": " + " - ".join(parts)
     return text[:500]

@@ -313,6 +313,9 @@ def print_now(model_id: int, body: PrintNowIn, db: Session = Depends(get_db), wh
     prof = db.get(PrinterProfile, body.profile_id)
     if not m or not prof:
         raise HTTPException(404, "model or printer not found")
+    from ..services import plates as plates_svc, printer_access
+    if not printer_access.may_use(db, who, plates_svc.farm_printer_name(prof)):
+        raise HTTPException(404, "model or printer not found")
     try:
         out = farm.print_now(db, m, prof, _actor(who), body.quantity, start=body.start_now)
     except ValueError as e:

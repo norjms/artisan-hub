@@ -98,14 +98,16 @@ def delete_plate(plate_id: int, db: Session = Depends(get_db), _: Principal = De
 
 
 @router.get("/printer-profiles/plates")
-def printer_plates(db: Session = Depends(get_db), _: Principal = Depends(need("view"))):
+def printer_plates(db: Session = Depends(get_db), who: Principal = Depends(need("view"))):
     out = []
     for prof in db.execute(select(PrinterProfile).where(PrinterProfile.active.is_(True)).order_by(PrinterProfile.name)).scalars():
         p = plates.installed(db, prof)
         out.append({"profile_id": prof.id, "printer": prof.name, "farm_printer": plates.farm_printer_name(prof),
                     "usual_plate": prof.bed_type, "installed_plate": plate_dict(p) if p else None,
                     "bambu": plates.is_bambu(prof)})
-    return {"printers": out}
+    from ..services import printer_access
+    return {"printers": printer_access.visible_items(db, who, out, id_field="farm_printer_id",
+                                                     name_fields=("farm_printer",))}
 
 
 class InstalledIn(BaseModel):

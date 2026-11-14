@@ -55,7 +55,6 @@ def shop_rig(env, monkeypatch, tmp_path):
     monkeypatch.setattr(farm, "_client", lambda: f)
     monkeypatch.setattr(shop, "farm", lambda: f)
     monkeypatch.setattr(clients, "farm", lambda: f)
-    monkeypatch.setattr(shop, "farm_kind", lambda team_id=None: "openprinthq")
     return TestClient(app), w, f
 
 

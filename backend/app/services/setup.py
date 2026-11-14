@@ -18,7 +18,7 @@ def hook_url(db: Session, service: str) -> str:
     return base if t.id == 1 else f"{base}/{t.slug}"
 
 WOO_TOPICS = ["order.created", "order.updated", "product.updated"]
-WT_EVENTS = ["queue.job_submitted", "queue.job_assigned", "queue.job_printing", "queue.job_completed", "queue.job_failed",
+FARM_EVENTS = ["queue.job_submitted", "queue.job_assigned", "queue.job_printing", "queue.job_completed", "queue.job_failed",
              "queue.job_cancelled", "printer.online", "printer.offline", "alarm.raised", "alarm.cleared",
              "vision.failure_detected", "shop.order.fulfilled", "shop.order.status_changed", "shop.order.ready_to_ship"]
 INV_CATEGORIES = ["Hardware", "Hardware/Magnets", "Hardware/Fasteners", "Hardware/Heat-set inserts", "Hardware/Bearings",
@@ -34,9 +34,9 @@ def run(db: Session) -> dict:
     except NotConnected as e:
         out["woo"] = str(e)
     try:
-        out.update(_legacy_farm(db))
+        out.update(_farm(db))
     except NotConnected as e:
-        out["legacy_farm"] = str(e)
+        out["farm"] = str(e)
     try:
         out["dam_fields"] = damsvc.ensure_fields(db)
     except NotConnected as e:
@@ -71,41 +71,29 @@ def _woo(db: Session) -> dict:
     return out
 
 
-def _legacy_farm(db: Session) -> dict:
-    """The farm's webhook to the hub (Legacy farm, or OpenPrintHQ's signed webhook provider), and Legacy farm's
-    storefront. Keys in the answer keep the legacy_farm_ names the setup page shows."""
-    from ..clients import farm_kind
+def _farm(db: Session) -> dict:
+    """ArtisanHub Farm's signed webhook to the hub."""
     out = {}
-    kind = farm_kind()
-    secret_key = "wt_webhook_secret" if kind == "legacy_farm" else "ophq_webhook_secret"
-    wurl = hook_url(db, kind)
+    secret_key = "ophq_webhook_secret"
+    wurl = hook_url(db, "openprinthq")
     hooks = farm().webhooks()
     mine = [h for h in hooks if h.get("url") == wurl]
     secret = setting(db, secret_key)
-    if mine and secret and (set(mine[0].get("events") or []) != set(WT_EVENTS) or not mine[0].get("active", True)):
+    if mine and secret and (set(mine[0].get("events") or []) != set(FARM_EVENTS) or not mine[0].get("active", True)):
         # more events than when it was registered (or disabled after failures): register it again, same secret
         for h in mine:
             farm().delete_webhook(h["id"])
-        farm().add_webhook(wurl, WT_EVENTS, secret)
-        out["legacy_farm_webhook"] = "updated"
+        farm().add_webhook(wurl, FARM_EVENTS, secret)
+        out["farm_webhook"] = "updated"
     elif not mine or not secret:
         for h in mine:
             farm().delete_webhook(h["id"])
         secret = secrets.token_hex(24)
-        farm().add_webhook(wurl, WT_EVENTS, secret)
+        farm().add_webhook(wurl, FARM_EVENTS, secret)
         set_setting(db, secret_key, secret)
-        out["legacy_farm_webhook"] = "created"
+        out["farm_webhook"] = "created"
     else:
-        out["legacy_farm_webhook"] = "exists"
-    if not farm().has("storefronts"):
-        return out
-    try:
-        fronts = farm().storefronts()
-        if fronts:
-            set_setting(db, "wt_storefront_id", fronts[0]["id"])
-            out["legacy_farm_storefront"] = fronts[0]["name"]
-    except Exception as e:  # noqa: BLE001
-        out["legacy_farm_storefront_error"] = str(e)[:200]
+        out["farm_webhook"] = "exists"
     return out
 
 

@@ -133,8 +133,7 @@ def push(db: Session, team_id: int | None = None, force: bool = False) -> dict:
     from ..clients.base import ApiError
     from ..kv import set_setting, setting
     try:
-        if farm_kind(team_id) != "openprinthq":
-            return {"skipped": "the farm is not ArtisanHub Farm"}
+        farm_kind(team_id)
     except Exception:  # noqa: BLE001
         return {"skipped": "no farm chosen"}
     body = payload(db, team_id)

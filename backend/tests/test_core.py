@@ -152,8 +152,8 @@ def test_api_flow(env):
 
 def test_client_factories_not_shadowed():
     from app import clients
-    from app.clients import woo, legacy_farm, inventree, spoolman, manyfold, dam
-    for f in (woo, legacy_farm, inventree, spoolman, manyfold, dam):
+    from app.clients import woo, openprinthq, inventree, spoolman, manyfold, dam
+    for f in (woo, openprinthq, inventree, spoolman, manyfold, dam):
         assert callable(f), f
     from app.db import session_scope
     from app.services import connections

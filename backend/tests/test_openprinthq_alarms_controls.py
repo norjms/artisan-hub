@@ -68,7 +68,7 @@ def test_command_refused_before_reaching_the_engine():
 
 def test_printer_allows():
     from app.clients.farm_base import printer_allows
-    assert printer_allows({}, "home") is True  # Legacy farm printers carry no commands list
+    assert printer_allows({}, "home") is True  # a printer without a commands list allows everything
     assert printer_allows({"commands": ["pause"]}, "home") is False
 
 
@@ -93,12 +93,3 @@ def test_older_engine_has_no_alarms():
     assert not c.has("alarms")
     with pytest.raises(FarmUnsupported):
         c.alarms()
-
-
-def test_legacy_farm_has_no_alarms():
-    from app.clients.farm_base import FarmUnsupported
-    from app.clients.legacy_farm_api import LegacyFarmClient
-    w = LegacyFarmClient("https://wt.example", "wt_x", "u", "p")
-    assert not w.has("alarms")
-    with pytest.raises(FarmUnsupported):
-        w.alarm_summary()

@@ -38,6 +38,6 @@ export function where(url) {
   return null;
 }
 
-/** The farm by name where it really is Legacy farm, else "the farm" (OpenPrintHQ and ArtisanHub Farm). */
-export const farmName = () => (nav.farm?.kind === 'legacy_farm' ? 'Legacy farm' : 'the farm');
-export const FarmName = () => (nav.farm?.kind === 'legacy_farm' ? 'Legacy farm' : 'The farm');
+/** How the screens name the print farm (ArtisanHub Farm) in a sentence. */
+export const farmName = () => 'the farm';
+export const FarmName = () => 'The farm';

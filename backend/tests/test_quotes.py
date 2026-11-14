@@ -87,6 +87,6 @@ def test_quote_flow(env, monkeypatch, tmp_path):
         assert calls[-1][1]["file_ref"] == "wt-q-file" and calls[-1][1]["quantity"] == 4
         assert fake.spec["filament_overrides"][0]["filament_colour"] == ["#0000FF"]
         ln = db.query(OrderLine).filter_by(woo_line_id=77).one()
-        assert ln.wt_job_ids == [5501] and ln.order.routed_at is not None
+        assert ln.farm_job_ids == [5501] and ln.order.routed_at is not None
         set_setting(db, "order_routing", "shim")
     assert c.post(f"/api/quotes/{qid}/approve").status_code == 400

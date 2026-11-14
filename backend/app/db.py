@@ -129,6 +129,104 @@ MIGRATIONS: list[tuple[int, str]] = [
 # Data migrations written in Python, so they run the same on Postgres and in the tests' SQLite. Numbered from 1001
 # so they never take a number the SQL list above may use next.
 THEME_MIGRATION = 1001     # every saved skin and light/dark mode becomes the glass-dark theme (services.themes)
+FARM_NAMES_MIGRATION = 1002   # columns named after the farm app the hub no longer supports get neutral names
+
+# (table, old column, new column)
+FARM_RENAMES = [
+    ("printer_profile", "wt_printer", "farm_printer"),
+    ("model_file", "legacy_farm_uuid", "farm_file_ref"),
+    ("model_file", "legacy_farm_error", "farm_file_error"),
+    ("product", "wt_error", "farm_error"),
+    ("shop_order_line", "wt_job_ids", "farm_job_ids"),
+    ("shop_order_line", "wt_error", "farm_error"),
+    ("maint_plan", "wt_schedule_id", "farm_schedule_id"),
+    ("maint_plan", "wt_status", "farm_status"),
+    ("maint_plan", "wt_hours_since", "farm_hours_since"),
+    ("maint_task", "wt_note", "farm_note"),
+    ("quote", "wt_file_uuid", "farm_file_ref"),
+    ("quote", "wt_job_ids", "farm_job_ids"),
+]
+FARM_DROPS = [("product", "wt_mapping_ids")]
+# (table, column, old value, new value)
+FARM_VALUES = [
+    ("printer_profile", "dispatch", "legacy_farm", "farm"),
+    ("print_record", "source", "legacy_farm", "farm"),
+    ("plate_check", "checked_by", "legacy_farm", "farm"),
+    ("maint_task", "done_by", "legacy_farm", "farm"),
+    ("maint_task", "created_by", "legacy_farm", "farm"),
+    ("job", "kind", "legacy_farm.sync_product", "farm.sync_product"),
+    ("job", "kind", "legacy_farm.mirror_model", "farm.mirror_model"),
+    ("setting", "key", "wt_mirror_library", "farm_mirror_library"),
+]
+# Background jobs that only served the old farm app: queued ones are dropped.
+FARM_DROPPED_JOBS = ("spools.sync", "spoolman.import_legacy_farm")
+OLD = "old:"     # prefix for ids that belonged to the farm an installation moved away from
+
+
+def migrate_farm_names(c) -> None:
+    """Rename the old farm-named columns, drop the ones only that farm used, and neutral values for the rows that
+    named it. Runs the same on Postgres and SQLite; columns already renamed (or never there) are skipped."""
+    from sqlalchemy import inspect
+    insp = inspect(c)
+    tables = set(insp.get_table_names())
+
+    def cols(t):
+        return {x["name"] for x in insp.get_columns(t)} if t in tables else set()
+    for t, old, new in FARM_RENAMES:
+        have = cols(t)
+        if old in have and new not in have:
+            c.execute(text(f"ALTER TABLE {t} RENAME COLUMN {old} TO {new}"))
+    for t, col in FARM_DROPS:
+        if col in cols(t):
+            c.execute(text(f"ALTER TABLE {t} DROP COLUMN {col}"))
+    if "spool_link" in tables:
+        c.execute(text("DROP TABLE spool_link"))
+    insp = inspect(c)
+    for t, col, old, new in FARM_VALUES:
+        if col in cols(t):
+            c.execute(text(f"UPDATE {t} SET {col} = :new WHERE {col} = :old"), {"new": new, "old": old})
+    if "kind" in cols("job"):
+        for k in FARM_DROPPED_JOBS:
+            c.execute(text("DELETE FROM job WHERE kind = :k AND state = 'queued'"), {"k": k})
+    if "farm_kind" in cols("model_file"):
+        c.execute(text("UPDATE model_file SET farm_file_ref = NULL, farm_kind = NULL "
+                       "WHERE farm_kind IS NULL OR farm_kind <> 'openprinthq'"))
+    if "kind" in cols("connection"):     # stored credentials for the farm app the hub no longer talks to
+        c.execute(text("DELETE FROM connection WHERE kind = 'legacy_farm'"))
+
+
+def _installation_farm(c) -> str | None:
+    from sqlalchemy import inspect
+    if not inspect(c).has_table("installation"):
+        return None
+    return c.execute(text("SELECT farm FROM installation WHERE id = 1")).scalar()
+
+
+def move_farm_data(c) -> None:
+    """The installation moves to ArtisanHub Farm from a farm the hub no longer supports (HUB_FARM_MOVE). Ids that
+    belonged to the old farm are kept as history under the "old:" prefix, so they never match the new farm's ids;
+    jobs still waiting or printing there are closed, since they are not in the new farm; links to its maintenance
+    items and files are cleared. Runs after migrate_farm_names."""
+    import json
+    o = OLD
+    c.execute(text("UPDATE farm_job SET status = 'cancelled', error = 'The print farm was changed: send it again.' "
+                   "WHERE status NOT IN ('completed', 'failed', 'cancelled')"))
+    c.execute(text(f"UPDATE farm_job SET external_id = '{o}' || external_id WHERE external_id NOT LIKE '{o}%'"))
+    c.execute(text(f"UPDATE print_record SET external_id = '{o}' || external_id "
+                   f"WHERE source = 'farm' AND external_id IS NOT NULL AND external_id NOT LIKE '{o}%'"))
+    for col in ("external_job_id", "reprint_job_id"):
+        c.execute(text(f"UPDATE plate_check SET {col} = '{o}' || {col} WHERE {col} IS NOT NULL AND {col} NOT LIKE '{o}%'"))
+    c.execute(text("UPDATE maint_plan SET farm_schedule_id = NULL, farm_status = NULL, farm_hours_since = NULL"))
+    c.execute(text("UPDATE quote SET farm_file_ref = NULL"))
+    c.execute(text("UPDATE product SET farm_error = NULL"))
+    for table in ("shop_order_line", "quote"):
+        for rid, ids in c.execute(text(f"SELECT id, farm_job_ids FROM {table}")).all():
+            ids = json.loads(ids) if isinstance(ids, str) else (ids or [])
+            new = [x if str(x).startswith(o) else f"{o}{x}" for x in ids]
+            if new != ids:
+                val = "CAST(:v AS JSON)" if c.dialect.name == "postgresql" else ":v"
+                c.execute(text(f"UPDATE {table} SET farm_job_ids = {val} WHERE id = :id"), {"v": json.dumps(new), "id": rid})
+    c.execute(text("UPDATE installation SET farm = 'openprinthq', farm_source = 'moved' WHERE id = 1"))
 
 
 def init_db():
@@ -139,6 +237,15 @@ def init_db():
         if pg:   # web workers and the job worker start together; serialize schema work
             c.execute(text("SELECT pg_advisory_xact_lock(424242)"))
         fresh = not eng.dialect.has_table(c, "job")
+        # Before any change: an installation on a farm the hub no longer supports stops here untouched, unless the
+        # operator asked to move it (services/installation.py, UnsupportedFarm).
+        old_farm = None if fresh else _installation_farm(c)
+        moving = False
+        if old_farm and old_farm != "openprinthq":
+            from .services.installation import UnsupportedFarm
+            if settings().farm_move != "openprinthq":
+                raise UnsupportedFarm(old_farm)
+            moving = True
         Base.metadata.create_all(c)
         c.execute(text("CREATE TABLE IF NOT EXISTS schema_version (v integer primary key)"))
         done = {r[0] for r in c.execute(text("SELECT v FROM schema_version"))}
@@ -154,5 +261,10 @@ def init_db():
             from .services.themes import migrate_prefs
             migrate_prefs(c)
             c.execute(text("INSERT INTO schema_version (v) VALUES (:v)"), {"v": THEME_MIGRATION})
+        if FARM_NAMES_MIGRATION not in done:
+            migrate_farm_names(c)
+            c.execute(text("INSERT INTO schema_version (v) VALUES (:v)"), {"v": FARM_NAMES_MIGRATION})
+        if moving:
+            move_farm_data(c)
         from .services.teams import bootstrap
         bootstrap(c, fresh)

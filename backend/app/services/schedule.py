@@ -1,9 +1,9 @@
 """Farm timeline: when each queued job should print, per printer, and whether each order ships on time.
 
-A simple forward simulation of Legacy farm's queue: printers free up when their current print ends (Legacy farm's
+A simple forward simulation of the farm's queue: printers free up when their current print ends (the farm's
 ETA) plus a turnaround for clearing the plate; waiting jobs are taken highest priority first, oldest first, each
 on the printer it is assigned to, else the earliest free printer that has an approved slice of the model (any
-printer when the hub can't tell). It is an estimate: Legacy farm makes the real choice, and its filament matching
+printer when the hub can't tell). It is an estimate: the farm makes the real choice, and its filament matching
 can hold a job back. Jobs waiting for filament or held aren't placed.
 """
 from datetime import datetime, timedelta, timezone
@@ -43,7 +43,7 @@ def default_due(db, o: Order) -> datetime | None:
 
 
 def _printers_for_models(db: Session, model_ids: set) -> dict:
-    """model id -> names of hub printers with an approved slice (the hub printer name is the Legacy farm name)."""
+    """model id -> names of hub printers with an approved slice (the hub printer name is the farm's name)."""
     if not model_ids:
         return {}
     names = {p.id: p.name for p in db.execute(select(PrinterProfile)).scalars()}
@@ -135,7 +135,7 @@ def build(db: Session, printers: list[dict] | None = None, at: datetime | None =
     orders = []
     for o in db.execute(select(Order).where(Order.routed_at.is_not(None), Order.printed_at.is_(None),
                                             Order.status.in_(("processing", "on-hold")))).scalars():
-        ids = [str(x) for ln in o.lines for x in (ln.wt_job_ids or [])]
+        ids = [str(x) for ln in o.lines for x in (ln.farm_job_ids or [])]
         done = {r.external_id for r in db.execute(select(FarmJob).where(FarmJob.external_id.in_(ids),
                                                                         FarmJob.status == "completed")).scalars()}
         left = [i for i in ids if i not in done]
@@ -189,7 +189,7 @@ def prioritise(db: Session, order_id: int, priority: int = 75) -> dict:
     w = farm._client()
     done, errs = [], []
     for ln in o.lines:
-        for i in ln.wt_job_ids or []:
+        for i in ln.farm_job_ids or []:
             fj = db.execute(select(FarmJob).where(FarmJob.external_id == str(i))).scalar()
             if fj and fj.status not in ("queued", "assigned", "waiting_filament", "held"):
                 continue

@@ -52,7 +52,7 @@
   }
   async function del(f) {
     const users = (usedBy[f.id] || []).map((p) => p.printer);
-    const msg = `Delete ${f.filename} for good? It goes from the library${f.legacy_farm_uuid ? ` and ${farmName()}` : ''}.`
+    const msg = `Delete ${f.filename} for good? It goes from the library${f.farm_file_ref ? ` and ${farmName()}` : ''}.`
       + (users.length ? `\n\n${users.join(', ')} ${users.length === 1 ? 'prints' : 'print'} it now and will have nothing approved.` : '')
       + (f.is_print_file ? '\n\nIt is the production file: store orders will have nothing to print until another file is chosen.' : '');
     if (!confirm(msg)) return;
@@ -114,7 +114,7 @@
             <td>
               {#if sliced(f)}
                 <button class="toggle {f.is_print_file ? 'on' : ''}" aria-label="Production file" onclick={() => setPrint(f, !f.is_print_file)}></button>
-                {#if f.legacy_farm_uuid}<div class="text-[11px] muted mt-1">In {farmName()}</div>{/if}
+                {#if f.farm_file_ref}<div class="text-[11px] muted mt-1">In {farmName()}</div>{/if}
               {/if}
             </td>
             <td class="whitespace-nowrap">

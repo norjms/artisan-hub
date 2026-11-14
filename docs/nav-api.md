@@ -36,7 +36,7 @@ installed farm's own links.
 | `perm` | The permission the item needs; leave the item out for people without it. |
 | `match` | Older paths that also count as this item's page. |
 | `installation` | The installation's name, or `null` when the caller is not signed in. |
-| `farm` | The installation's farm: `kind` (`legacy_farm`, `openprinthq` or `null`), a display `label`, and `app`, the farm's own address or `null`. |
+| `farm` | The installation's farm: `kind` (`openprinthq`, or `null` before first-run setup), a display `label`, and `app`, the farm's own address or `null`. |
 
 The **Farm** group, after Print, holds the pages only the farm has: Files, Slicer, Projects, Statistics, Print
 reports, Timelapses and Farm settings. In `nav.json` its items carry `"app": "farm"` and a `farm_path` but no `href`.

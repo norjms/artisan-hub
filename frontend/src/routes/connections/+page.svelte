@@ -14,7 +14,7 @@
 
   const LABELS = {
     url: 'Address', public_url: 'Public link (for buttons)', host: 'Host name', user: 'API user', username: 'Login name',
-    verify_tls: 'Check TLS certificate', use_as_farm: 'Use as the print farm (instead of Legacy farm)', target_group: 'Printer group for jobs (optional)', library_path: 'Library path (as Manyfold sees it)', key: 'API key', secret: 'API secret',
+    verify_tls: 'Check TLS certificate', target_group: 'Printer group for jobs (optional)', library_path: 'Library path (as Manyfold sees it)', key: 'API key', secret: 'API secret',
     webhook_secret: 'Webhook secret', api_key: 'API key', password: 'Password', token: 'API token', client_id: 'Client ID',
     client_secret: 'Client secret', ntfy_url: 'ntfy topic URL', ntfy_token: 'ntfy access token (optional)',
     telegram_chat_id: 'Telegram chat id', telegram_bot_token: 'Telegram bot token', slack_webhook_url: 'Slack webhook URL',
@@ -166,7 +166,7 @@
             <label class="block text-sm"><span class="font-medium">{LABELS[f]}</span>
               <textarea class="input w-full mt-1 font-mono text-xs" rows="8" bind:value={edit.config[f]} placeholder={PRINTERS_EXAMPLE}></textarea>
               <span class="text-xs muted">kind brother_ql (tape 62x29, 62, 62x100 or 29x90) or zpl (tape WxH in mm, dpi 203 or 300). The phone app can add them too.</span></label>
-          {:else if f === 'verify_tls' || f === 'use_as_farm'}
+          {:else if f === 'verify_tls'}
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={edit.config[f]} /> {LABELS[f]}</label>
           {:else if f === 'model' && isAi(edit.kind)}
             <div class="text-sm">

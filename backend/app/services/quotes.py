@@ -5,7 +5,7 @@ Price per order = max(minimum, (filament + machine time) x markup x quantity + s
 grams (scaled to the chosen material's density) at that material's price per kg; machine time is the quote
 printer's hourly rate (or the team default). The model is sliced once, laid flat automatically, on the quote
 printer, falling back to the other active printers when it doesn't fit. At approval it is sliced again in the
-chosen material and colour, uploaded to Legacy farm and queued, quantity as ordered.
+chosen material and colour, uploaded to the farm and queued, quantity as ordered.
 
 Files live under data_dir/quotes/<token>/ and are deleted when a quote expires unordered (valid_days)."""
 import hashlib
@@ -356,7 +356,7 @@ def refuse_note(db: Session, quote_id: int, woo_order_id: int) -> dict:
 
 
 def produce(db: Session, quote_id: int) -> dict:
-    """Approved: slice in the chosen material and colour, upload to Legacy farm, queue the pieces."""
+    """Approved: slice in the chosen material and colour, upload to the farm, queue the pieces."""
     from ..models import OrderLine
     from .farm import _client, upsert
     q = db.get(Quote, quote_id)
@@ -376,19 +376,19 @@ def produce(db: Session, quote_id: int) -> dict:
     ids = []
     for f in out["files"]:
         up = w.upload_file(str(out_dir / f), f"Q{q.id}-{re.sub(r'[^A-Za-z0-9._-]+', '_', Path(q.filename).stem)[:40]}-{f}")
-        q.wt_file_uuid = up.get("uuid") or (up.get("file") or {}).get("uuid")
+        q.farm_file_ref = up.get("uuid") or (up.get("file") or {}).get("uuid")
         name = f"Quote {q.id} {q.filename} {m.get('label', m['material'])} {q.colour or ''}".strip()
-        r = w.submit_job(file_ref=q.wt_file_uuid, quantity=q.quantity, job_name=name)
+        r = w.submit_job(file_ref=q.farm_file_ref, quantity=q.quantity, job_name=name)
         ids += [i for i in (r or {}).get("job_ids") or []]
-    q.wt_job_ids = ids
+    q.farm_job_ids = ids
     if q.order_line_id:
         ln = db.get(OrderLine, q.order_line_id)
         if ln:
-            ln.wt_job_ids, ln.wt_error = ids, None
+            ln.farm_job_ids, ln.farm_error = ids, None
             for i in ids:
                 upsert(db, i, {"name": f"Quote {q.id} {q.filename}", "status": "queued", "order_refs": [ln.order.number]})
             o = ln.order
-            if all(x.wt_job_ids for x in o.lines) and not o.routed_at:
+            if all(x.farm_job_ids for x in o.lines) and not o.routed_at:
                 o.routed_at = now()
     event(db, "farm", f"Custom print quote {q.id} sent to the farm ({len(ids)} job(s))")
     return {"jobs": ids}
@@ -415,5 +415,5 @@ def admin_dict(db: Session, q: Quote) -> dict:
             "unit_price": q.unit_price, "total": q.total, "breakdown": q.breakdown or {}, "error": q.error,
             "previews": [f"/api/quotes/{q.id}/preview/{p}" for p in q.previews or []],
             "order": {"id": o.id, "number": o.number, "status": o.status, "customer": o.customer} if o else None,
-            "wt_job_ids": q.wt_job_ids or [], "review_note": q.review_note, "reviewed_by": q.reviewed_by,
+            "farm_job_ids": q.farm_job_ids or [], "review_note": q.review_note, "reviewed_by": q.reviewed_by,
             "reviewed_at": iso(q.reviewed_at), "created_at": iso(q.created_at), "expires_at": iso(q.expires_at)}

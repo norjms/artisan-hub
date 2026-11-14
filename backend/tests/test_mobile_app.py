@@ -13,7 +13,7 @@ html[data-ah-skin] {
   --ah-bg: #f0f0f0; --ah-text: #333333; --ah-accent: #3b82f6; --ah-accent-text: #ffffff;
   --ah-radius: 8px; --ah-input-bg: var(--ah-bg); --ah-accent-soft: color-mix(in srgb, var(--ah-accent) 14%, transparent);
 }
-html[data-ah-skin="legacy_farm"][data-ah-mode="dark"] { --ah-bg: #1e1e1e; --ah-text: #ffffff; --ah-accent: #38bdf8; }
+html[data-ah-skin="openprinthq"][data-ah-mode="dark"] { --ah-bg: #1e1e1e; --ah-text: #ffffff; --ah-accent: #38bdf8; }
 html[data-ah-skin="classic"] { --ah-font: "Inter", sans-serif; --ah-accent: #ea580c; --ah-radius: 14px; }
 html[data-ah-skin="classic"][data-ah-mode="dark"] { --ah-bg: #0f0e0d; }
 html[data-ah-skin="classic"] .x { --ah-bg: #123456; }
@@ -29,8 +29,8 @@ def css(monkeypatch):
 
 def test_tokens_cascade_and_resolve():
     from app.services import look
-    wl = look.tokens(CSS, "legacy_farm", "light")
-    wd = look.tokens(CSS, "legacy_farm", "dark")
+    wl = look.tokens(CSS, "openprinthq", "light")
+    wd = look.tokens(CSS, "openprinthq", "dark")
     cd = look.tokens(CSS, "classic", "dark")
     assert wl["bg"] == "#f0f0f0" and wd["bg"] == "#1e1e1e" and wd["accent"] == "#38bdf8"
     assert wd["input-bg"] == "#1e1e1e" or wd["input-bg"] == "#f0f0f0"     # var() resolved to a colour
@@ -63,7 +63,7 @@ def test_real_stylesheet_when_present():
         assert sl["fonts"]["body"]["files"], skin
     assert any(f["weight"] == 300 for f in look.font_files(css)["Inter"])
     if look._cache.get("dir"):
-        assert all(f.get("ttf") for f in look.skin_look(css, "legacy_farm")["fonts"]["body"]["files"])
+        assert all(f.get("ttf") for f in look.skin_look(css, "openprinthq")["fonts"]["body"]["files"])
 
 
 def test_look_endpoint_follows_owner_and_etag(css):
@@ -81,8 +81,9 @@ def test_look_endpoint_follows_owner_and_etag(css):
     assert d["fonts"]["body"]["family"] == "Inter" and d["wordmark"].startswith("/theme/")
     r2 = c.get("/api/mobile/v1/look", headers={**H(raw), "If-None-Match": r.headers["etag"]})
     assert r2.status_code == 304
-    r3 = c.get("/api/mobile/v1/look?skin=legacy_farm&all=true", headers=H(raw))
-    assert r3.json()["skin"] == "legacy_farm" and set(r3.json()["all"]) == {"legacy_farm", "openprinthq", "classic"}
+    r3 = c.get("/api/mobile/v1/look?skin=openprinthq&all=true", headers=H(raw))
+    assert r3.json()["skin"] == "openprinthq" and set(r3.json()["all"]) == {"openprinthq", "classic"}
+    assert c.get("/api/mobile/v1/look?skin=legacy_farm", headers=H(raw)).status_code == 400
     assert c.get("/api/mobile/v1/look?skin=nope", headers=H(raw)).status_code == 400
 
 
@@ -94,7 +95,7 @@ def test_tiles_one_call(monkeypatch):
             return {"printers": [{"name": "H2D", "state": "printing", "busy": True, "online": True, "progress": 64},
                                  {"name": "mk3s01", "state": "idle", "online": True},
                                  {"name": "A350", "state": "offline", "online": False}]}
-    monkeypatch.setattr(mobile, "_wt", lambda: WT())
+    monkeypatch.setattr(mobile, "_farm", lambda: WT())
     raw = _key(["read"])
     r = _client().get("/api/mobile/v1/tiles", headers=H(raw))
     assert r.status_code == 200, r.text
@@ -106,11 +107,11 @@ def test_tiles_one_call(monkeypatch):
     assert "farm" not in d["errors"]
 
 
-def test_tiles_without_legacy_farm(monkeypatch):
+def test_tiles_without_the_farm(monkeypatch):
     from app.routers import mobile
 
     def boom():
-        raise RuntimeError("Legacy farm is down")
-    monkeypatch.setattr(mobile, "_wt", boom)
+        raise RuntimeError("the farm is down")
+    monkeypatch.setattr(mobile, "_farm", boom)
     r = _client().get("/api/mobile/v1/tiles", headers=H(_key(["read"])))
     assert r.status_code == 200 and "farm" in r.json()["errors"] and "queue" in r.json()

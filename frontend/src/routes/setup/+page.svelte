@@ -7,7 +7,7 @@
   let status = $state(null);
   let err = $state('');
   let busy = $state(false);
-  let farm = $state('');
+  const farm = 'openprinthq';
   let teamName = $state('');
   let token = $state('');
   let done = $state(null);
@@ -60,7 +60,7 @@
     {#if done}
       <h1 class="ah-title" style="font-size:30px">Setup is done</h1>
       <p class="muted mb-4">
-        Your workspace <b>{done.team.name}</b> runs <b>{done.farm === 'openprinthq' ? 'ArtisanHub Farm' : 'Legacy farm'}</b>.
+        Your workspace <b>{done.team.name}</b> runs <b>ArtisanHub Farm</b>.
         This API key lets a script or the installer connect your other services. It is shown once.
       </p>
       <div class="flex gap-2 mb-4">
@@ -77,15 +77,6 @@
         The setup token is in the hub's log from its first start, or is the HUB_SETUP_TOKEN the hub was started with.
       </p>
       <form class="space-y-4" onsubmit={submit}>
-        <fieldset>
-          <legend class="font-medium mb-1">Print farm</legend>
-          <p class="text-sm muted mb-2">
-            One farm per installation. Once the hub holds files, jobs or spools this choice is permanent. Only
-            ArtisanHub Farm can later move to hosting.
-          </p>
-          <label class="flex items-center gap-2"><input type="radio" name="farm" value="openprinthq" bind:group={farm} required /> ArtisanHub Farm</label>
-          <label class="flex items-center gap-2"><input type="radio" name="farm" value="legacy_farm" bind:group={farm} /> Legacy farm</label>
-        </fieldset>
         <label class="block">
           <span class="font-medium">Workspace name</span>
           <input class="input w-full" bind:value={teamName} required maxlength="120" placeholder="My workshop" />
@@ -95,7 +86,7 @@
           <input class="input w-full font-mono" bind:value={token} required autocomplete="off" />
         </label>
         {#if err}<p role="alert" style="color:var(--bad)">{err}</p>{/if}
-        <button class="btn primary w-full" disabled={busy || !farm}>{busy ? 'Setting up...' : 'Finish setup'}</button>
+        <button class="btn primary w-full" disabled={busy}>{busy ? 'Setting up...' : 'Finish setup'}</button>
       </form>
     {:else if err}
       <p role="alert" style="color:var(--bad)">{err}</p>

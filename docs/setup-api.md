@@ -35,8 +35,8 @@ No authentication.
 {"farm": "openprinthq", "team_name": "My workshop", "key_name": "ArtisanHub installer"}
 ```
 
-- `farm`: `legacy_farm` or `openprinthq`. The installation's one print farm, chosen explicitly. The hub never
-  infers it from which connections exist, and connecting the other farm is refused afterwards.
+- `farm`: `openprinthq` (ArtisanHub Farm), the only print farm the hub supports; it may be left out. Any other
+  value answers 422. See `docs/farm.md`.
 - `team_name`: the first workspace's name.
 - `key_name`: optional; the name the API key shows under in the hub's settings.
 

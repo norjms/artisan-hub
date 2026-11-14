@@ -6,7 +6,6 @@ puts the installation row into the state it needs and the fixture puts it back.
 
 import hashlib
 import re
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -61,7 +60,7 @@ def test_a_new_install_has_no_farm_until_setup_chooses_one(new_install):
     with pytest.raises(FarmNotChosen):
         farm_kind()
     assert farm_connected() is False
-    with pytest.raises(ValueError, match="Choose this installation's print farm first"):
+    with pytest.raises(ValueError, match="Finish first-run setup at /setup first"):
         connect_allowed("openprinthq", existing=False)
 
 
@@ -103,53 +102,53 @@ def test_setup_chooses_the_farm_names_the_team_and_mints_a_key_once(new_install,
     finally:
         s.close()
 
-    again = client.post("/api/setup/v1/initialize", json={"farm": "legacy_farm", "team_name": "Other"},
+    again = client.post("/api/setup/v1/initialize", json={"farm": "openprinthq", "team_name": "Other"},
                         headers={"Authorization": f"Bearer {TOKEN}"})
     assert again.status_code == 409
     assert farm_kind() == "openprinthq"
 
 
-def test_after_setup_the_farm_is_never_inferred_and_the_other_farm_is_refused(new_install):
+def test_setup_refuses_a_farm_the_hub_no_longer_supports(new_install, client):
+    r = client.post("/api/setup/v1/initialize", json={"farm": "legacy_farm", "team_name": "Lab"},
+                    headers={"Authorization": f"Bearer {TOKEN}"})
+    assert r.status_code == 422
+    assert client.get("/api/setup/v1/status").json()["setup_complete"] is False
+
+
+def test_after_setup_a_second_farm_connection_is_refused(new_install):
     from app.clients import farm_kind
     from app.services.installation import connect_allowed
-    _set(farm="legacy_farm", farm_source="setup")
-    assert farm_kind() == "legacy_farm"
-    with pytest.raises(ValueError, match="one installation runs exactly one farm"):
-        connect_allowed("openprinthq", existing=False)
-    connect_allowed("openprinthq", existing=True)      # an existing row can still be edited
-    connect_allowed("legacy_farm", existing=False)
+    _set(farm="openprinthq", farm_source="setup")
+    assert farm_kind() == "openprinthq"
+    connect_allowed("openprinthq", existing=True)      # the existing row can still be edited
     connect_allowed("spoolman", existing=False)
 
 
-@pytest.mark.parametrize(
-    ("rows", "expected"),
-    [
-        ([("legacy_farm", {"url": "http://wt"})], "legacy_farm"),
-        ([("openprinthq", {"url": "http://op"})], "openprinthq"),
-        ([("legacy_farm", {"url": "http://wt"}), ("openprinthq", {"url": "http://op", "use_as_farm": True})], "openprinthq"),
-        ([("legacy_farm", {"url": "http://wt"}), ("openprinthq", {"url": "http://op"})], "legacy_farm"),
-        ([("legacy_farm", {})], None),
-        ([], None),
-    ],
-)
-def test_the_old_rule_is_reproduced_exactly_for_migration(rows, expected):
-    from app.services.installation import _inferred
-    assert _inferred([SimpleNamespace(kind=k, enabled=True, config=c) for k, c in rows]) == expected
+def test_an_installation_on_an_unsupported_farm_refuses_to_start(new_install):
+    from app.db import SessionLocal
+    from app.services.installation import UnsupportedFarm, bootstrap
+    _set(farm="legacy_farm", farm_source="setup")
+    s = SessionLocal()
+    try:
+        with pytest.raises(UnsupportedFarm, match="no longer supports"):
+            bootstrap(s, fresh=False)
+    finally:
+        s.rollback()
+        s.close()
 
 
 @pytest.mark.parametrize(
-    ("kinds", "fresh", "expected"),
+    ("connected", "fresh", "expected"),
     [
-        ({"legacy_farm"}, False, ("legacy_farm", "migrated")),
-        ({"openprinthq"}, True, ("openprinthq", "migrated")),
-        ({"legacy_farm", "openprinthq"}, False, (None, "legacy")),
-        (set(), False, (None, "legacy")),
-        (set(), True, (None, None)),
+        (True, False, ("openprinthq", "migrated")),
+        (True, True, ("openprinthq", "migrated")),
+        (False, False, (None, "legacy")),
+        (False, True, (None, None)),
     ],
 )
-def test_an_existing_installation_is_migrated_only_when_unambiguous(kinds, fresh, expected):
+def test_an_existing_installation_is_migrated_only_when_connected(connected, fresh, expected):
     from app.services.installation import decide
-    assert decide(kinds, fresh) == expected
+    assert decide(connected, fresh) == expected
 
 
 def test_healthz_reports_database_and_migrations(client):

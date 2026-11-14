@@ -1,4 +1,4 @@
-"""WooCommerce + Legacy farm: product push, live toggle, stock sync, order intake and part consumption."""
+"""WooCommerce and the farm library: product push, live toggle, stock sync, order intake and part consumption."""
 import hashlib
 import hmac
 import html
@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..clients import woo, farm, farm_kind, inventree
+from ..clients import woo, farm, inventree
 from ..clients.base import ApiError
 from ..config import settings
 from ..jobs import PermanentError, event, enqueue
@@ -224,7 +224,7 @@ def push_product(db: Session, product_id: int, actor: str | None = None) -> dict
     p.woo_error = None
     event(db, f"model:{m.id}", f"Pushed to WooCommerce as {'live' if p.live else 'draft'} (product {p.woo_product_id})",
           actor=actor)
-    enqueue(db, "legacy_farm.sync_product", ref=f"product:{p.id}", payload={"product_id": p.id}, delay=5)
+    enqueue(db, "farm.sync_product", ref=f"product:{p.id}", payload={"product_id": p.id}, delay=5)
     return {"woo_product_id": p.woo_product_id, "status": p.woo_status, "stock": stock}
 
 
@@ -399,7 +399,7 @@ def poll_orders(db: Session) -> dict:
     return {"orders": n}
 
 
-# ---------- Legacy farm ----------
+# ---------- print files in the farm ----------
 def print_files(product: Product) -> list[ModelFile]:
     files = [f for f in product.model.files if f.is_print_file]
     if not files:
@@ -407,146 +407,96 @@ def print_files(product: Product) -> list[ModelFile]:
     return files
 
 
-def sync_legacy_farm_product(db: Session, product_id: int) -> dict:
+def sync_farm_product(db: Session, product_id: int) -> dict:
+    """Put a store product's print-ready files in the farm's library, so its orders can print. The hub keeps which
+    file prints for which SKU and sends file jobs itself."""
     p = db.get(Product, product_id)
     if not p or not p.woo_product_id:
         return {"skipped": "not on woo"}
     files = print_files(p)
     if not files:
-        p.wt_error = "no print-ready file (sliced .3mf or .gcode) marked for production"
-        return {"skipped": p.wt_error}
-    wt = farm()
+        p.farm_error = "no print-ready file (sliced .3mf or .gcode) marked for production"
+        return {"skipped": p.farm_error}
+    c = farm()
     for f in files:
-        ensure_farm_file(f, wt, f"{p.sku}__{f.filename}")
-    if not wt.has("sku_mapping"):
-        # The farm has no SKU mappings (OpenPrintHQ): the hub keeps SKU to file and sends file jobs itself.
-        p.wt_mapping_ids = {}
-        p.wt_error = None
-        return {"files": [farm_ref(f) for f in files], "mappings": None}
-    sf = setting(db, "wt_storefront_id")
-    if not sf:
-        fronts = wt.storefronts()
-        if not fronts:
-            raise PermanentError("no Legacy farm storefront configured")
-        sf = fronts[0]["id"]
-        set_setting(db, "wt_storefront_id", sf)
-    # when the hub sends orders to Legacy farm itself, Legacy farm must not also queue them from its shop
-    auto_queue = bool(setting(db, "wt_auto_queue", True)) and (setting(db, "order_routing", "shim") or "shim") != "hub"
-    existing = {m.get("sku"): m for m in wt.sku_mappings()}
-    targets = []
-    if p.color_mode == "options" and any(v.active for v in p.variants):
-        for v in p.variants:
-            if v.active:
-                targets.append((v.sku, v.woo_variation_id, f"{p.title} ({v.color_name})"))
-    else:
-        targets.append((p.sku, p.woo_product_id, p.title))
-    ids = {}
-    primary = files[0]
-    for sku, ext_variant, name in targets:
-        body = {"sku": sku, "storefront_id": sf, "external_product_id": str(p.woo_product_id),
-                "external_variant_id": str(ext_variant or p.woo_product_id), "gcode_file_uuid": farm_ref(primary),
-                "gcode_filename": primary.filename, "product_name": name, "quantity_per_sku": 1,
-                "auto_queue": auto_queue}
-        ex = existing.get(sku)
-        if ex:
-            wt.update_sku_mapping(ex["id"], body)
-            mid = ex["id"]
-        else:
-            res = wt.create_sku_mapping(body) or {}
-            mid = (res.get("mapping") or res).get("id") if isinstance(res, dict) else None
-            if not mid:
-                mid = next((x["id"] for x in wt.sku_mappings() if x.get("sku") == sku), None)
-        if len(files) > 1 and mid:
-            wt.set_mapping_parts(mid, [{"gcode_file_uuid": farm_ref(f), "quantity": 1, "name": f.filename}
-                                       for f in files])
-        ids[sku] = mid
-    p.wt_mapping_ids = ids
-    p.wt_error = None
-    event(db, f"model:{p.model_id}", f"Legacy farm SKU mappings ready: {', '.join(ids)}")
-    return {"mappings": ids}
+        ensure_farm_file(f, c, f"{p.sku}__{f.filename}")
+    p.farm_error = None
+    return {"files": [farm_ref(f) for f in files]}
 
 
-# ---------- Legacy farm library mirror ----------
-WT_KINDS = ("3mf_project", "3mf_sliced", "gcode")
+FARM_FILE_KINDS = ("3mf_project", "3mf_sliced", "gcode")
 
 
 # ---------- farm library refs ----------
-# model_file.legacy_farm_uuid holds the file's ref in ONE farm's library and model_file.farm_kind says which. When
-# the team's farm changes (Legacy farm -> OpenPrintHQ), refs from the old farm mean nothing to the new one: an
-# OpenPrintHQ ref is a library file id, a Legacy farm one a UUID. These helpers treat a ref from another farm as
-# "not in this farm's library yet", so the file is uploaded again on first use instead of sent as a bad ref.
+# model_file.farm_file_ref is the file's id in ArtisanHub Farm's library (farm_kind "openprinthq"). A ref of any
+# other kind means nothing to the farm, so the file is uploaded again on first use instead of sent as a bad ref.
+FARM = "openprinthq"
+
 
 def farm_ref(f: ModelFile, kind: str | None = None) -> str | None:
-    """The file's ref in the current (or given) farm's library, or None when it isn't there."""
-    if not f.legacy_farm_uuid:
+    """The file's id in the farm's library, or None when it isn't there."""
+    if not f.farm_file_ref:
         return None
-    return f.legacy_farm_uuid if (f.farm_kind or "legacy_farm") == (kind or farm_kind()) else None
+    return f.farm_file_ref if f.farm_kind == FARM else None
 
 
 def set_farm_ref(f: ModelFile, ref: str | None, kind: str | None = None) -> None:
-    f.legacy_farm_uuid = ref
-    f.farm_kind = (kind or farm_kind()) if ref else None
-    f.legacy_farm_error = None
+    f.farm_file_ref = ref
+    f.farm_kind = FARM if ref else None
+    f.farm_file_error = None
 
 
-def ensure_farm_file(f: ModelFile, wt=None, name: str | None = None, kind: str | None = None) -> str:
+def ensure_farm_file(f: ModelFile, c=None, name: str | None = None, kind: str | None = None) -> str:
     """Upload the file to the farm's library unless it is already there; return its ref there."""
     from pathlib import Path
-    kind = kind or farm_kind()
-    ref = farm_ref(f, kind)
+    ref = farm_ref(f)
     if ref:
         return ref
     if not f.library_rel:
         raise ValueError(f"{f.filename} has no copy in the hub's library to upload")
-    wt = wt or farm()
-    res = wt.upload_file(str(Path(settings().library_root) / f.library_rel), name or f.filename)
+    c = c or farm()
+    res = c.upload_file(str(Path(settings().library_root) / f.library_rel), name or f.filename)
     ref = res.get("uuid") or (res.get("file") or {}).get("uuid")
     if not ref:
         raise RuntimeError(f"unexpected farm upload response: {res}")
-    set_farm_ref(f, str(ref), kind)
-    return f.legacy_farm_uuid
+    set_farm_ref(f, str(ref))
+    return f.farm_file_ref
 
 
-def _folder_keys(kind: str) -> tuple[str, str]:
-    """(team setting, model.extra key) holding farm library folder ids; Legacy farm keeps its original names."""
-    if kind == "legacy_farm":
-        return "wt_root_folder_id", "wt_folder_id"
-    return f"farm_root_folder_id:{kind}", f"farm_folder_id:{kind}"
+ROOT_FOLDER_KEY = "farm_root_folder_id:openprinthq"   # team setting (name kept from earlier versions)
+MODEL_FOLDER_KEY = "farm_folder_id:openprinthq"        # model.extra (name kept from earlier versions)
 
 
 def model_folder_id(m, kind: str | None = None):
-    return (m.extra or {}).get(_folder_keys(kind or farm_kind())[1])
+    return (m.extra or {}).get(MODEL_FOLDER_KEY)
 
 
-def _wt_folder(wt, name: str, parent):
-    r = wt.library_folder(name, parent)
+def _farm_folder(c, name: str, parent):
+    r = c.library_folder(name, parent)
     return (r.get("folder") or r)["id"]
 
 
-def mirror_model_to_legacy_farm(db: Session, model_id: int) -> dict:
-    """Store the model's 3MF / G-code files in Legacy farm's library under <Team name>/<Category>/<Code - Name>."""
-    import time
+def mirror_model_to_farm(db: Session, model_id: int) -> dict:
+    """Store the model's 3MF / G-code files in the farm's library under <Team name>/<Category>/<Code - Name>."""
     from pathlib import Path
     from ..models import Model
     m = db.get(Model, model_id)
     if not m:
         return {"skipped": "missing"}
-    kind = farm_kind()
-    todo = [f for f in m.files if f.kind in WT_KINDS and f.library_rel
-            and (not farm_ref(f, kind) or f.legacy_farm_error)]
+    todo = [f for f in m.files if f.kind in FARM_FILE_KINDS and f.library_rel
+            and (not farm_ref(f) or f.farm_file_error)]
     if not todo:
         return {"uploaded": 0}
-    wt = farm()
-    root_key, folder_key = _folder_keys(kind)
+    c = farm()
     extra = dict(m.extra or {})
-    folder = extra.get(folder_key)
+    folder = extra.get(MODEL_FOLDER_KEY)
     if not folder:
         from .teams import current_team
-        root = setting(db, root_key) or _wt_folder(wt, current_team(db).name, None)
-        set_setting(db, root_key, root)
-        cat = _wt_folder(wt, m.category.name if m.category else "Uncategorized", root)
-        folder = _wt_folder(wt, f"{m.code} - {m.name}", cat)
-        extra[folder_key] = folder
+        root = setting(db, ROOT_FOLDER_KEY) or _farm_folder(c, current_team(db).name, None)
+        set_setting(db, ROOT_FOLDER_KEY, root)
+        cat = _farm_folder(c, m.category.name if m.category else "Uncategorized", root)
+        folder = _farm_folder(c, f"{m.code} - {m.name}", cat)
+        extra[MODEL_FOLDER_KEY] = folder
         m.extra = extra
         db.commit()
     n = 0
@@ -555,15 +505,15 @@ def mirror_model_to_legacy_farm(db: Session, model_id: int) -> dict:
         if not path.exists():
             continue
         try:
-            if not farm_ref(f, kind):
-                ensure_farm_file(f, wt, kind=kind)
-                f.legacy_farm_error = "move pending"
+            if not farm_ref(f):
+                ensure_farm_file(f, c)
+                f.farm_file_error = "move pending"
                 db.commit()
-            wt.move_library_file(f.legacy_farm_uuid, folder)
-            f.legacy_farm_error = None
+            c.move_library_file(f.farm_file_ref, folder)
+            f.farm_file_error = None
             n += 1
         except ApiError as e:
-            f.legacy_farm_error = str(e)[:500]
+            f.farm_file_error = str(e)[:500]
             if e.status == 429:
                 db.commit()
                 raise

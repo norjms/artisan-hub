@@ -29,7 +29,7 @@ INSTRUCTIONS = (
     "Printers are the team's printer profiles (list_printers), each sliced with OrcaSlicer or PrusaSlicer on the team's "
     "slicer service. Slicing can take a few minutes: slice_model waits up to wait_seconds, then returns a job id to check "
     "with slice_job_status. A new slice lands in review; approve_slice (or approve=true) makes it the file that printer "
-    "uses, and for the default printer the file sent to print-farm software such as Legacy farm."
+    "uses, and for the default printer the file sent to the print farm."
 )
 
 
@@ -64,7 +64,7 @@ def _printer(db: Session, ref) -> PrinterProfile:
         if p:
             return p
     p = db.execute(select(PrinterProfile).where(or_(func.lower(PrinterProfile.name) == s.lower(),
-                                                    func.lower(PrinterProfile.wt_printer) == s.lower()))).scalar()
+                                                    func.lower(PrinterProfile.farm_printer) == s.lower()))).scalar()
     if not p:
         names = [x.name for x in db.execute(select(PrinterProfile)).scalars()]
         raise ToolError(f"no printer {ref!r}; printers: {', '.join(names)}")
@@ -73,7 +73,7 @@ def _printer(db: Session, ref) -> PrinterProfile:
 
 def _printer_dict(p: PrinterProfile) -> dict:
     return {"id": p.id, "name": p.name, "engine": slicing.label(slicing.engine_of(p)), "tools": p.tools or [],
-            "imported_preset": bool(p.machine_config), "legacy_farm_printer": p.wt_printer, "machine_preset": p.machine_preset,
+            "imported_preset": bool(p.machine_config), "farm_printer": p.farm_printer, "machine_preset": p.machine_preset,
             "default_process": p.process_preset or None, "filament_presets": p.filament_presets or {},
             "uses_designer_settings": p.use_model_settings, "default": p.is_default, "active": p.active}
 
@@ -82,7 +82,7 @@ def _file_dict(f: ModelFile) -> dict:
     return {"file_id": f.id, "filename": f.filename, "kind": f.kind, "printer": f.printer, "slicer": f.slicer,
             "plates": f.plates, "print_minutes": round(f.print_seconds / 60) if f.print_seconds else None,
             "grams": round(sum((x.get("grams") or 0) for x in (f.filament or [])), 1) or None,
-            "production": bool(f.is_print_file), "in_legacy_farm": bool(farm_ref(f) and not f.legacy_farm_error),
+            "production": bool(f.is_print_file), "in_farm": bool(farm_ref(f) and not f.farm_file_error),
             "settings": f.settings or None}
 
 
@@ -313,19 +313,19 @@ def t_set_production_file(db, p, a):
     if not f:
         raise ToolError("no file with that id")
     if f.kind not in ("3mf_sliced", "gcode"):
-        raise ToolError("Legacy farm needs a sliced .gcode.3mf or .gcode file")
+        raise ToolError("The farm needs a sliced .gcode.3mf or .gcode file")
     for o in f.model.files:
         o.is_print_file = o.id == f.id
     if f.model.product:
-        enqueue(db, "legacy_farm.sync_product", ref=f"product:{f.model.product.id}:wt",
+        enqueue(db, "farm.sync_product", ref=f"product:{f.model.product.id}:farm",
                 payload={"product_id": f.model.product.id}, delay=5)
-    enqueue(db, "legacy_farm.mirror_model", ref=f"model:{f.model.id}:wt", payload={"model_id": f.model.id}, delay=2, priority=9)
+    enqueue(db, "farm.mirror_model", ref=f"model:{f.model.id}:farm", payload={"model_id": f.model.id}, delay=2, priority=9)
     db.commit()
     return {"model": f.model.code, "production_file": _file_dict(f)}
 
 
 S_MODEL = {"type": ["string", "integer"], "description": "Hub model id or code, e.g. M1185"}
-S_PRINTER = {"type": ["string", "integer"], "description": "Printer profile name, Legacy farm printer name or id. Omit for the default printer."}
+S_PRINTER = {"type": ["string", "integer"], "description": "Printer profile name, farm printer name or id. Omit for the default printer."}
 S_TUNE = {
     "layer_height": {"type": "number", "description": "mm, picks the matching process preset (e.g. 0.16, 0.2, 0.28)"},
     "walls": {"type": "integer", "minimum": 1, "maximum": 20},
@@ -378,7 +378,7 @@ TOOLS = {
                                                        "outcome": {"type": "string", "enum": ["ok", "failed", "cancelled"]},
                                                        "duration_minutes": {"type": "number"}, "note": {"type": "string"}},
                       "required": ["result_id", "outcome"]}, False),
-    "set_production_file": (t_set_production_file, "Make a sliced file the one Legacy farm prints for its model.",
+    "set_production_file": (t_set_production_file, "Make a sliced file the one the farm prints for its model.",
                             {"type": "object", "properties": {"file_id": {"type": "integer"}}, "required": ["file_id"]}, False),
 }
 

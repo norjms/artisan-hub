@@ -1,6 +1,5 @@
 <script>
   import Glyph from '$lib/Glyph.svelte';
-  import { farmName, FarmName } from '$lib/nav.svelte.js';
   import Page from '$lib/Page.svelte';
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
@@ -10,18 +9,11 @@
   let fil = $state(null);
   let q = $state('');
   let onlyUsed = $state(false);
-  let ss = $state(null);
   async function load() {
     parts = await api.get('/api/inventory/parts');
     fil = await api.get('/api/inventory/filament');
-    ss = await api.get('/api/spools/sync').catch(() => null);
   }
-  async function syncSpools() {
-    const r = await attempt(() => api.post('/api/spools/sync', {}));
-    const n = (k) => (r[k] || []).length;
-    toast(`Synced: ${n('to_spoolman')} use recorded in Spoolman, ${n('to_legacy_farm')} weights sent to ${farmName()}, ${n('created_in_spoolman') + n('created_in_legacy_farm')} new spools linked`);
-    setTimeout(load, 3000);
-  }
+
   onMount(load);
   async function adjust(p, delta) {
     await attempt(() => api.post(`/api/inventory/parts/${p.id}/adjust`, { delta }), `${delta > 0 ? 'Added' : 'Used'} ${Math.abs(delta)}`);
@@ -34,7 +26,7 @@
   const shown = $derived(parts.filter((p) => (!onlyUsed || p.used_by.length) && (p.name + ' ' + (p.ipn || '') + ' ' + (p.category || '')).toLowerCase().includes(q.toLowerCase())));
 </script>
 
-<Page title="Inventory" description={`Parts from InvenTree, filament from Spoolman (kept in step with ${farmName()}). Refreshed every 5 minutes.`}>
+<Page title="Inventory" description="Parts from InvenTree and filament from the farm's spool library. Refreshed every 5 minutes.">
 {#snippet actions()}
 <button class="btn" onclick={refresh}>Refresh now</button>
 {/snippet}
@@ -77,13 +69,7 @@
 {:else if tab === 'filament' && fil}
   <div class="panel p-4">
     <div class="flex flex-wrap items-center gap-2 mb-3">
-      {#if ss}
-        <span class="text-sm muted mr-auto">Spoolman and {farmName()} sync every 5 minutes: {farmName() === 'Legacy farm' ? "Legacy farm's" : "the farm's"} print use is recorded in Spoolman, Spoolman's weights go to {farmName()}, new spools are added on the other side.
-          {#if ss.last}Last: {new Date(ss.last.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}, {ss.links.filter((l) => l.state === 'ok').length} spools linked{#if ss.links.some((l) => l.state === 'broken')}, <span class="text-red-600">{ss.links.filter((l) => l.state === 'broken').length} broken</span>{/if}.{/if}
-          {#if !ss.enabled}<span class="chip warn">off</span>{/if}</span>
-        <button class="btn sm" onclick={syncSpools}>Sync spools now</button>
-      {/if}
-      <a class="btn sm {ss ? '' : 'ml-auto'}" target="_blank" href={fil.spoolman_url}>Open Spoolman</a>
+      <a class="btn sm ml-auto" target="_blank" href={fil.spoolman_url}>Open Spoolman</a>
     </div>
     <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr))">
       {#each fil.spools as s}

@@ -17,9 +17,10 @@ Licence: [GNU AGPL-3.0](LICENSE).
   DNS rebinding and size limits.
 - **Licences.** Each model carries a licence code and evidence, and the hub refuses to put a model on sale when
   its licence is not confirmed.
-- **Store (WooCommerce).** New products are created as drafts and only go live from the hub. Store stock is
-  the number of units buildable from parts and filament on hand, minus open orders. Orders arrive by webhook.
-  An instant quote form lets customers upload their own model to be sliced and priced.
+- **Stores (WooCommerce, Shopify, Etsy).** New products are created as drafts and only go live from the hub.
+  Stock is one pool for every store: the units buildable from parts and filament on hand, minus open orders from
+  any store. Orders arrive by webhook and print on the farm the same way whichever store they came from. An instant
+  quote form on WooCommerce lets customers upload their own model to be sliced and priced. See `docs/stores.md`.
 - **Print farm.** ArtisanHub Farm (OpenPrintHQ) runs the printers: print queue, plate checks,
   timeline, maintenance, alarms and a wall display (`/tv`).
 - **Slicing.** With a slicer service connected, the hub slices models for the farm's printers and re-slices
@@ -50,6 +51,8 @@ Optional services the hub connects to:
 | Manyfold | Model library with 3D preview, sharing a folder with the hub. |
 | InvenTree | Parts such as screws, magnets, inserts and packaging; suppliers and purchase orders. |
 | WooCommerce | Web store. Plugins for WordPress are in `woocommerce/`. |
+| Shopify | Web store (an app from your Shopify Dev Dashboard). |
+| Etsy | Marketplace shop (an app from etsy.com/developers). |
 | ResourceSpace | Digital asset management for product photos. |
 | An OpenID Connect provider, such as Authentik | Sign-in for people. |
 | A slicer service | Runs OrcaSlicer or PrusaSlicer for the hub. |

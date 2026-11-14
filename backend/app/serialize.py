@@ -54,6 +54,7 @@ def product(p: Product | None) -> dict | None:
         "woo_stock_pushed": p.woo_stock_pushed, "farm_error": p.farm_error,
         "woo_admin_url": f"{woo_url}/wp-admin/post.php?post={p.woo_product_id}&action=edit" if p.woo_product_id and woo_url else None,
         "woo_view_url": f"{woo_url}/?p={p.woo_product_id}" if p.woo_product_id and woo_url else None,
+        "stores": _stores(p),
         "variants": [variant(v) for v in p.variants],
         "filaments": [{"id": f.id, "slot": f.slot, "label": f.label, "follows_variant": f.follows_variant,
                        "material": f.material, "color_name": f.color_name, "color_hex": f.color_hex,
@@ -62,6 +63,19 @@ def product(p: Product | None) -> dict | None:
         "parts": [{"id": b.id, "inventree_part_id": b.inventree_part_id, "name": b.name, "qty": b.qty,
                    "variant_id": b.variant_id, "note": b.note} for b in p.parts],
     }
+
+
+def _stores(p: Product) -> list[dict]:
+    """The product on each connected store (services.stores.listing_view)."""
+    from sqlalchemy.orm import object_session
+    db = object_session(p)
+    if db is None:
+        return []
+    from .services.stores import listing_view
+    try:
+        return listing_view(db, p)
+    except Exception:  # noqa: BLE001  (no team bound, as in some scripts: the page still loads)
+        return []
 
 
 def model_card(m: Model, units: int | None = None) -> dict:

@@ -37,6 +37,15 @@ def run(db: Session) -> dict:
         out.update(_farm(db))
     except NotConnected as e:
         out["farm"] = str(e)
+    from . import stores
+    if stores.connected("shopify"):
+        try:
+            out["shopify_webhooks"] = stores.shopify_webhooks(db)
+        except Exception as e:  # noqa: BLE001  (the other apps still get set up)
+            out["shopify"] = f"{type(e).__name__}: {getattr(e, 'message', e)}"[:300]
+    if stores.connected("etsy"):
+        out["etsy_webhooks"] = ("add the order webhooks in Etsy's Webhook portal: "
+                                f"{hook_url(db, 'etsy')} for order.paid, order.canceled and order.shipped")
     try:
         out["dam_fields"] = damsvc.ensure_fields(db)
     except NotConnected as e:

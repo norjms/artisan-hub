@@ -1093,7 +1093,7 @@ def product_patch(product_id: int, body: ProductPatchIn, db: Session = Depends(g
 def product_push(product_id: int, db: Session = Depends(get_db), p: Principal = Depends(need("store"))):
     from . import catalog
     r = catalog.push(product_id, db, p)
-    return {"job_id": r.get("job")}
+    return {"job_id": None, "stores": r.get("stores") or []}
 
 
 class OrderStatusIn(BaseModel):
@@ -1102,14 +1102,27 @@ class OrderStatusIn(BaseModel):
 
 @router.post("/orders/{order_id}/status")
 def order_status(order_id: int, body: OrderStatusIn, db: Session = Depends(get_db), p: Principal = Depends(need("store"))):
-    """Set a store order to processing, completed or on-hold (in WooCommerce and here)."""
+    """Set a store order to processing, completed or on-hold (in its store and here). Shopify and Etsy orders take
+    completed only (marked shipped there); their other states follow the store."""
     from ..clients import woo
     from ..models import Order
+    from ..services import stores
     if body.status not in ("processing", "completed", "on-hold"):
         raise HTTPException(422, "status is processing, completed or on-hold")
     o = db.get(Order, order_id)
     if not o:
         raise HTTPException(404)
+    if (o.channel or "woo") != "woo":
+        if body.status != "completed":
+            raise HTTPException(400, f"{stores.LABEL[o.channel]} orders can only be marked shipped from the hub")
+        old = o.status
+        try:
+            stores.mark_shipped(db, o, actor=_actor(p))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"the store did not take it: {str(getattr(e, 'message', e))[:300]}")
+        event(db, f"order:{o.id}", f"Order {o.number}: {old} -> {o.status} (mobile API)", actor=_actor(p))
+        db.commit()
+        return {"id": o.id, "number": o.number, "status": o.status}
     try:
         r = woo().update_order(o.woo_order_id, {"status": body.status}) or {}
     except Exception as e:  # noqa: BLE001

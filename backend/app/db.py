@@ -130,6 +130,7 @@ MIGRATIONS: list[tuple[int, str]] = [
 # so they never take a number the SQL list above may use next.
 THEME_MIGRATION = 1001     # every saved skin and light/dark mode becomes the glass-dark theme (services.themes)
 FARM_NAMES_MIGRATION = 1002   # columns named after the farm app the hub no longer supports get neutral names
+STORES_MIGRATION = 1003   # orders from more than one store: shop_order.channel and ext_id (services.stores)
 
 # (table, old column, new column)
 FARM_RENAMES = [
@@ -193,6 +194,34 @@ def migrate_farm_names(c) -> None:
                        "WHERE farm_kind IS NULL OR farm_kind <> 'openprinthq'"))
     if "kind" in cols("connection"):     # stored credentials for the farm app the hub no longer talks to
         c.execute(text("DELETE FROM connection WHERE kind = 'legacy_farm'"))
+
+
+def migrate_stores(c) -> None:
+    """Orders carry the store they came from (channel) and their id there (ext_id), so Shopify and Etsy orders sit
+    beside Woo's. Existing orders are Woo orders. Runs the same on Postgres and SQLite (where woo_order_id keeps its
+    NOT NULL: SQLite is only for development)."""
+    from sqlalchemy import inspect
+    insp = inspect(c)
+    if not insp.has_table("shop_order"):
+        return
+    pg = c.dialect.name == "postgresql"
+    cols = {x["name"] for x in insp.get_columns("shop_order")}
+    if "channel" not in cols:
+        c.execute(text("ALTER TABLE shop_order ADD COLUMN channel VARCHAR(12) NOT NULL DEFAULT 'woo'"))
+    if "ext_id" not in cols:
+        c.execute(text("ALTER TABLE shop_order ADD COLUMN ext_id VARCHAR(40)"))
+    c.execute(text("UPDATE shop_order SET ext_id = CAST(woo_order_id AS VARCHAR(40)) "
+                   "WHERE ext_id IS NULL AND woo_order_id IS NOT NULL"))
+    if "ext_line_id" not in {x["name"] for x in insp.get_columns("shop_order_line")}:
+        c.execute(text("ALTER TABLE shop_order_line ADD COLUMN ext_line_id VARCHAR(60)"))
+    if pg:
+        c.execute(text("ALTER TABLE shop_order ALTER COLUMN woo_order_id DROP NOT NULL"))
+        c.execute(text("ALTER TABLE shop_order DROP CONSTRAINT IF EXISTS uq_shop_order_team_woo"))
+        c.execute(text("ALTER TABLE shop_order DROP CONSTRAINT IF EXISTS uq_shop_order_team_channel"))
+        c.execute(text("ALTER TABLE shop_order ADD CONSTRAINT uq_shop_order_team_channel UNIQUE (team_id, channel, ext_id)"))
+    else:
+        c.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_shop_order_team_channel "
+                       "ON shop_order (team_id, channel, ext_id)"))
 
 
 def _installation_farm(c) -> str | None:
@@ -264,6 +293,9 @@ def init_db():
         if FARM_NAMES_MIGRATION not in done:
             migrate_farm_names(c)
             c.execute(text("INSERT INTO schema_version (v) VALUES (:v)"), {"v": FARM_NAMES_MIGRATION})
+        if STORES_MIGRATION not in done:
+            migrate_stores(c)
+            c.execute(text("INSERT INTO schema_version (v) VALUES (:v)"), {"v": STORES_MIGRATION})
         if moving:
             move_farm_data(c)
         from .services.teams import bootstrap

@@ -5,6 +5,9 @@ Notable changes to Artisan Hub. Versions follow the tags of this repository.
 ## Unreleased: first public release
 
 - First public release of Artisan Hub under the GNU AGPL-3.0.
+- Shopify and Etsy beside WooCommerce (`docs/stores.md`): push products, one shared stock pool, orders in from
+  webhooks and a regular check, and Mark shipped to fulfil an order in its store. Each product can be kept off a
+  store. Etsy connects through Connect Etsy (OAuth) and takes its listing defaults on the Connections page.
 - ArtisanHub Farm (OpenPrintHQ) is the only print farm. Support for other farm apps is removed, with the settings,
   relays, spool sync and store SKU mapping that only they used; orders reach the farm through the hub's own order
   routing. Database columns get farm-neutral names on upgrade. An installation set up with another farm refuses to

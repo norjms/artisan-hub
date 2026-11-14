@@ -734,7 +734,7 @@ def _lines_with(db: Session, ext_id: str) -> list[OrderLine]:
 
 
 def order_progress(db: Session, fj: FarmJob):
-    """When a job ends: if it was the last one of its order, note it on the Woo order."""
+    """When a job ends: if it was the last one of its order, note it on the order in its store."""
     for ln in _lines_with(db, fj.external_id):
         o = ln.order
         ids = [str(x) for line in o.lines for x in (line.farm_job_ids or [])]
@@ -746,14 +746,14 @@ def order_progress(db: Session, fj: FarmJob):
 
 
 def order_printed(db: Session, order_id: int) -> dict:
-    from ..clients import woo
     from .alerts import notify
+    from .stores import order_note
     o = db.get(Order, order_id)
     if not o:
         return {"skipped": "gone"}
-    woo().add_order_note(o.woo_order_id, "Artisan Hub: every item on this order has printed and is ready to pack.")
+    noted = order_note(db, o, "Artisan Hub: every item on this order has printed and is ready to pack.")
     notify(db, "order_printed", f"Order #{o.number} is printed", "Ready to pack.", link=_link("/orders"))
-    return {"noted": True}
+    return {"noted": noted}
 
 
 def order_print_state(db: Session, o: Order) -> dict:

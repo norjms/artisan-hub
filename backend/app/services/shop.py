@@ -123,6 +123,9 @@ def push_product(db: Session, product_id: int, actor: str | None = None) -> dict
     p = db.get(Product, product_id)
     if not p:
         raise PermanentError("product not found")
+    from .stores import sells_on
+    if not sells_on(db, p, "woo"):
+        return {"skipped": "not sold on WooCommerce"}
     problems = validate_for_push(p, p.live)
     if problems:
         p.woo_error = "; ".join(problems)
@@ -228,14 +231,16 @@ def push_product(db: Session, product_id: int, actor: str | None = None) -> dict
     return {"woo_product_id": p.woo_product_id, "status": p.woo_status, "stock": stock}
 
 
-def set_live(db: Session, product_id: int, live: bool, actor: str | None = None) -> dict:
+def set_live(db: Session, product_id: int, live: bool, actor: str | None = None, this_store_only: bool = False) -> dict:
+    """this_store_only: the product was taken off Woo; its live state on the other stores stays."""
     p = db.get(Product, product_id)
     problems = validate_for_push(p, live)
     if problems and live:
         raise PermanentError("; ".join(problems))
-    p.live = live
+    if not this_store_only:
+        p.live = live
     if not p.woo_product_id:
-        return push_product(db, product_id, actor)
+        return {"skipped": "not on the store"} if this_store_only else push_product(db, product_id, actor)
     res = woo().update_product(p.woo_product_id, {"status": "publish" if live else "draft",
                                                   "catalog_visibility": "visible" if live else "hidden"})
     p.woo_status = res.get("status")
@@ -252,7 +257,10 @@ def sync_stock(db: Session, product_id: int | None = None) -> dict:
     if product_id:
         q = q.where(Product.id == product_id)
     changed = 0
+    from .stores import sells_on
     for p in db.execute(q).scalars():
+        if not sells_on(db, p, "woo"):
+            continue
         avail = availability.product_availability(db, p, snap)
         stock = availability.stock_for_woo(p, avail)
         if stock == (p.woo_stock_pushed or {}):
@@ -339,7 +347,7 @@ def upsert_order(db: Session, o: dict) -> Order:
         enqueue(db, "order.consume", ref=f"order:{row.id}", payload={"order_id": row.id})
     # every product's stock right away (not behind background work): products sharing a part or filament with
     # what was just ordered must drop before the next customer sees them
-    enqueue(db, "woo.sync_stock", ref="stock:all", delay=1, priority=1)
+    enqueue(db, "store.sync_stock", ref="stock:all", delay=1, priority=1)
     return row
 
 

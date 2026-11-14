@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import (
     String, Integer, BigInteger, Boolean, Float, Text, Date, DateTime, ForeignKey, JSON, UniqueConstraint, Index,
 )
+from sqlalchemy import event as sa_event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -291,6 +292,25 @@ class Variant(TenantMixin, Base):
     product: Mapped[Product] = relationship(back_populates="variants")
 
 
+class StoreListing(TenantMixin, Base):
+    """A product on a store other than WooCommerce (services.stores). One row per product and store; a row with
+    enabled false keeps the product off that store."""
+    __tablename__ = "store_listing"
+    __table_args__ = (UniqueConstraint("team_id", "product_id", "channel", name="uq_store_listing_product_channel"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id", ondelete="CASCADE"), index=True)
+    channel: Mapped[str] = mapped_column(String(12))                     # shopify | etsy
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    ext_id: Mapped[str | None] = mapped_column(String(60))               # the listing's id in that store
+    status: Mapped[str | None] = mapped_column(String(20))               # draft | active | inactive
+    error: Mapped[str | None] = mapped_column(Text)
+    stock_pushed: Mapped[dict] = mapped_column(JSON, default=dict)       # {variant_id|"p": qty}, as for Woo
+    refs: Mapped[dict] = mapped_column(JSON, default=dict)               # store ids: variants, inventory items, images
+    options: Mapped[dict] = mapped_column(JSON, default=dict)            # per-product overrides of the store defaults
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    product: Mapped[Product] = relationship()
+
+
 class BomFilament(TenantMixin, Base):
     """Filament needed per unit. If follows_variant, the color comes from the ordered variant."""
     __tablename__ = "bom_filament"
@@ -374,9 +394,11 @@ class FilamentCatalog(TenantMixin, Base):
 
 class Order(TenantMixin, Base):
     __tablename__ = "shop_order"
-    __table_args__ = (UniqueConstraint("team_id", "woo_order_id", name="uq_shop_order_team_woo"),)
+    __table_args__ = (UniqueConstraint("team_id", "channel", "ext_id", name="uq_shop_order_team_channel"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    woo_order_id: Mapped[int] = mapped_column(Integer)
+    channel: Mapped[str] = mapped_column(String(12), default="woo")       # woo | shopify | etsy (services.stores)
+    ext_id: Mapped[str | None] = mapped_column(String(40))                # the order's id in that store
+    woo_order_id: Mapped[int | None] = mapped_column(Integer)
     number: Mapped[str] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(30))
     customer: Mapped[str | None] = mapped_column(String(200))
@@ -396,11 +418,21 @@ class Order(TenantMixin, Base):
     lines: Mapped[list["OrderLine"]] = relationship(back_populates="order", cascade="all, delete-orphan")
 
 
+@sa_event.listens_for(Order, "before_insert")
+def _order_ext_id(mapper, connection, target):
+    """A Woo order is known by its Woo id: ext_id carries it too, so one unique key covers every store."""
+    if target.ext_id is None and target.woo_order_id is not None:
+        target.ext_id = str(target.woo_order_id)
+    if not target.channel:
+        target.channel = "woo"
+
+
 class OrderLine(TenantMixin, Base):
     __tablename__ = "shop_order_line"
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("shop_order.id", ondelete="CASCADE"))
     woo_line_id: Mapped[int | None] = mapped_column(Integer)
+    ext_line_id: Mapped[str | None] = mapped_column(String(60))          # the line's id in a store other than Woo
     sku: Mapped[str | None] = mapped_column(String(80))
     name: Mapped[str | None] = mapped_column(String(300))
     qty: Mapped[int] = mapped_column(Integer, default=1)

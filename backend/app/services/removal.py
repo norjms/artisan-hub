@@ -100,6 +100,17 @@ def purge(db: Session, model_id: int) -> dict:
             if e.status != 404:
                 report["warnings"].append(f"Woo product {p.woo_product_id}: {e.message[:120]}")
 
+    # Shopify and Etsy drafts
+    if p:
+        from . import stores
+        for ch in stores.CHANNELS:
+            try:
+                gone = stores.remove_listing(db, p, ch)
+                if gone:
+                    report[ch] = gone
+            except ApiError as e:
+                report["warnings"].append(f"{stores.LABEL[ch]} listing: {e.message[:120]}")
+
     # ArtisanHub Farm: the model's files in the farm's library
     try:
         c = farm()
@@ -193,7 +204,7 @@ def purge(db: Session, model_id: int) -> dict:
         from ..jobs import enqueue
         enqueue(db, "manyfold.rescan", ref="manyfold:rescan", delay=30)
         if p:
-            enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+            enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     except Exception:  # noqa: BLE001
         pass
     _ = manyfold  # imported for symmetry; rescan runs via the job

@@ -345,7 +345,7 @@ def _after_use(db, m: Model, prof: PrinterProfile, out: dict, actor: str, what: 
     from ..tasks import _after_approve
     event(db, f"model:{m.id}", f"{what} for {prof.name}" + (" (locked)" if out.get("locked") else ""), actor=actor)
     if out.get("bom_updated"):
-        enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+        enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     _after_approve(db, m, out)
 
 
@@ -509,7 +509,7 @@ def approve(rid: int, db: Session = Depends(get_db), p: Principal = Depends(need
     from ..jobs import event
     event(db, f"model:{m.id}", f"Approved the slice for {db.get(PrinterProfile, r.profile_id).name}", actor=p.actor)
     if out.get("bom_updated"):
-        enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+        enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     _after_approve(db, m, out)
     db.commit()
     return out
@@ -783,7 +783,7 @@ def bulk_approve(body: BulkResultsIn, db: Session = Depends(get_db), p: Principa
     if ok:
         event(db, "slicing", f"Approved {ok} slice(s) in bulk", actor=p.actor)
     if bom:
-        enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+        enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     db.commit()
     return {"approved": ok, "skipped": skipped}
 
@@ -910,7 +910,7 @@ def match_model_filaments(model_id: int, db: Session = Depends(get_db), p: Princ
         slicing.refresh_file_result(db, pr, m)
         if slicing.sync_bom(db, m, pr):
             out["bom_updated"] = True
-            enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+            enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     db.commit()
     return {**out, **model_filaments(model_id, db, p)}
 

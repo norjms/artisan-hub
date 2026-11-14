@@ -189,7 +189,18 @@ def delete_check(model_id: int, db: Session = Depends(get_db), _: Principal = De
             "will_remove": {"photos": len(m.images), "files": len(m.files), "woo_draft": bool(p and p.woo_product_id),
                             "dam_photos": sum(1 for i in m.images if i.dam_ref), "dam_collection": bool(m.dam_collection_ref),
                             "farm_files": sum(1 for f in m.files if shop.farm_ref(f)),
+                            "store_listings": _store_listings(db, p),
                             "library_folder": m.library_rel}}
+
+
+def _store_listings(db: Session, p) -> list[str]:
+    from ..models import StoreListing
+    from ..services.stores import LABEL
+    if not p:
+        return []
+    return [LABEL[r.channel] for r in db.execute(select(StoreListing).where(StoreListing.product_id == p.id,
+                                                                            StoreListing.ext_id.is_not(None))).scalars()
+            if r.channel in LABEL and r.channel != "woo"]
 
 
 class PurgeIn(BaseModel):
@@ -435,7 +446,7 @@ async def replace_file(file_id: int, file: UploadFile = File(...), db: Session =
         raise HTTPException(400, str(e))
     event(db, f"model:{m.id}", f"Replaced {out['replaced']} with {out['file']}", actor=p.actor)
     if out.get("bom_updated"):
-        enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+        enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     from ..tasks import _after_approve
     _after_approve(db, m, out)
     if m.product and m.product.woo_product_id:
@@ -566,7 +577,7 @@ def put_bom(product_id: int, body: BomIn, db: Session = Depends(get_db), p: Prin
     for x in body.parts:
         prod.parts.append(BomPart(**x.model_dump()))
     event(db, f"model:{prod.model_id}", "Updated bill of materials", actor=p.actor)
-    enqueue(db, "woo.sync_stock", ref="stock:all", delay=2)
+    enqueue(db, "store.sync_stock", ref="stock:all", delay=2)
     db.commit()
     return {"product": ser_product(prod), "availability": availability.product_availability(db, prod)}
 
@@ -579,10 +590,12 @@ def push(product_id: int, db: Session = Depends(get_db), p: Principal = Depends(
     probs = licensing.sale_problems(prod.model)
     if probs:
         raise HTTPException(400, "Can't push to the store: " + "; ".join(probs))
-    j = enqueue(db, "woo.push_product", ref=f"product:{prod.id}", payload={"product_id": prod.id}, actor=p.actor,
-                max_attempts=3)
+    from ..services import stores
+    chans = stores.queue_push(db, prod, p.actor)
+    if not chans:
+        raise HTTPException(400, "No store is connected for this product (Settings, Connections)")
     db.commit()
-    return {"job": j.id}
+    return {"stores": chans}
 
 
 class LiveIn(BaseModel):
@@ -599,10 +612,12 @@ def go_live(product_id: int, body: LiveIn, db: Session = Depends(get_db), p: Pri
         problems = validate_for_push(prod, True, switching_live=not prod.live)
         if problems:
             raise HTTPException(400, "Can't go live: " + "; ".join(problems))
-    j = enqueue(db, "woo.set_live", ref=f"product:{prod.id}:live", payload={"product_id": prod.id, "live": body.live},
-                actor=p.actor, dedupe=False, max_attempts=3)
+    from ..services import stores
+    chans = stores.queue_live(db, prod, body.live, p.actor)
+    if not chans:
+        raise HTTPException(400, "No store is connected for this product (Settings, Connections)")
     db.commit()
-    return {"job": j.id}
+    return {"stores": chans}
 
 
 class BulkLive(BaseModel):
@@ -622,8 +637,8 @@ def bulk_live(body: BulkLive, db: Session = Depends(get_db), p: Principal = Depe
         if problems:
             refused.append({"model_id": mid, "code": m.code, "problems": problems})
             continue
-        enqueue(db, "woo.set_live", ref=f"product:{m.product.id}:live",
-                payload={"product_id": m.product.id, "live": body.live}, actor=p.actor, dedupe=False)
+        from ..services import stores
+        stores.queue_live(db, m.product, body.live, p.actor)
         queued.append(mid)
     db.commit()
     return {"queued": queued, "refused": refused}
@@ -635,11 +650,47 @@ def bulk_push(body: BulkLive, db: Session = Depends(get_db), p: Principal = Depe
     for mid in body.model_ids:
         m = db.get(Model, mid)
         if m and m.product and not licensing.sale_problems(m):
-            enqueue(db, "woo.push_product", ref=f"product:{m.product.id}", payload={"product_id": m.product.id},
-                    actor=p.actor)
-            n += 1
+            from ..services import stores
+            if stores.queue_push(db, m.product, p.actor):
+                n += 1
     db.commit()
     return {"queued": n}
+
+
+class StoreChoice(BaseModel):
+    enabled: bool = True
+    options: dict | None = None      # Etsy: taxonomy_id, shipping_profile_id, return_policy_id, readiness_state_id, ...
+
+
+@router.put("/products/{product_id}/stores/{channel}")
+def product_store(product_id: int, channel: str, body: StoreChoice, db: Session = Depends(get_db),
+                  p: Principal = Depends(need("store"))):
+    """Sell the product on a store or not, and per-product overrides of that store's listing defaults."""
+    from ..services import stores
+    prod = db.get(Product, product_id)
+    if not prod:
+        raise HTTPException(404)
+    if channel not in stores.ALL:
+        raise HTTPException(400, f"stores are {', '.join(stores.ALL)}")
+    row = stores.listing(db, prod, channel, create=True)
+    was = row.enabled
+    row.enabled = body.enabled
+    if body.options is not None:
+        allowed = {"taxonomy_id", "shipping_profile_id", "return_policy_id", "readiness_state_id", "who_made", "when_made"}
+        row.options = {k: v for k, v in body.options.items() if k in allowed and v not in (None, "")}
+    if was and not body.enabled:
+        # off this store only: the product stays live on the others
+        if channel == "woo" and prod.woo_product_id:
+            enqueue(db, "woo.set_live", ref=f"product:{prod.id}:live",
+                    payload={"product_id": prod.id, "live": False, "this_store_only": True}, actor=p.actor, dedupe=False)
+        elif channel != "woo" and row.ext_id:
+            enqueue(db, "stores.set_live", ref=f"product:{prod.id}:{channel}:live",
+                    payload={"product_id": prod.id, "channel": channel, "live": False, "this_store_only": True},
+                    actor=p.actor, dedupe=False)
+    event(db, f"model:{prod.model_id}", f"{'Sells' if body.enabled else 'Does not sell'} on {stores.LABEL[channel]}",
+          actor=p.actor)
+    db.commit()
+    return {"stores": stores.listing_view(db, prod)}
 
 
 @router.get("/categories")

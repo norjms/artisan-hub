@@ -103,6 +103,9 @@
   .toggle.on { background: var(--ah-accent); }
   .toggle.on::after { left: 23px; background: var(--ah-on-accent); }
   .toggle.busy { opacity: 0.6; }
+  .toggle.sm { width: 36px; height: 20px; border-radius: 10px; }
+  .toggle.sm::after { top: 2px; left: 2px; width: 16px; height: 16px; }
+  .toggle.sm.on::after { left: 18px; }
   .ah-toggle:disabled { opacity: 0.55; cursor: not-allowed; }
   code { font-family: var(--ah-font-mono); font-size: 0.92em; }
   details > summary { cursor: pointer; }

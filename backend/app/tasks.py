@@ -35,7 +35,8 @@ def _woo_push(db, job):
 
 @handler("woo.set_live")
 def _woo_live(db, job):
-    return shop.set_live(db, job.payload["product_id"], bool(job.payload["live"]), job.created_by)
+    return shop.set_live(db, job.payload["product_id"], bool(job.payload["live"]), job.created_by,
+                         this_store_only=bool(job.payload.get("this_store_only")))
 
 
 @handler("woo.sync_stock")
@@ -46,6 +47,44 @@ def _woo_stock(db, job):
 @handler("woo.poll_orders")
 def _woo_orders(db, job):
     return shop.poll_orders(db)
+
+
+@handler("store.sync_stock")
+def _store_stock(db, job):
+    """Stock to every connected store (Woo, Shopify, Etsy) from the one shared pool."""
+    from .services import stores
+    return stores.sync_all_stock(db)
+
+
+@handler("stores.push_product")
+def _stores_push(db, job):
+    from .services import stores
+    return stores.push_product(db, job.payload["product_id"], job.payload["channel"], job.created_by)
+
+
+@handler("stores.set_live")
+def _stores_live(db, job):
+    from .services import stores
+    return stores.set_live(db, job.payload["product_id"], job.payload["channel"], bool(job.payload["live"]),
+                           job.created_by, this_store_only=bool(job.payload.get("this_store_only")))
+
+
+@handler("stores.ingest_order")
+def _stores_ingest(db, job):
+    from .services import stores
+    return stores.ingest_order(db, job.payload["channel"], str(job.payload["ext_id"]))
+
+
+@handler("shopify.poll_orders")
+def _shopify_orders(db, job):
+    from .services import stores
+    return stores.poll_orders(db, "shopify")
+
+
+@handler("etsy.poll_orders")
+def _etsy_orders(db, job):
+    from .services import stores
+    return stores.poll_orders(db, "etsy")
 
 
 @handler("order.ingest")
@@ -81,14 +120,14 @@ def setting_value(db, key, default=None):
 @handler("inventory.refresh_parts")
 def _inv_parts(db, job):
     r = inventory.refresh_parts(db)
-    enqueue(db, "woo.sync_stock", ref="stock:all", delay=1)
+    enqueue(db, "store.sync_stock", ref="stock:all", delay=1)
     return r
 
 
 @handler("inventory.refresh_spools")
 def _inv_spools(db, job):
     r = inventory.refresh_spools(db)
-    enqueue(db, "woo.sync_stock", ref="stock:all", delay=1)
+    enqueue(db, "store.sync_stock", ref="stock:all", delay=1)
     return r
 
 
@@ -478,7 +517,7 @@ def _slice(db, job):
     event(db, f"model:{m.id}", f"Sliced for {r['printer']} ({r['process']}): {mins // 60}h {mins % 60}m, {r['grams']} g, "
                                + ("approved" if r.get("approved") else "ready for review"), actor=job.created_by)
     if r.get("bom_updated"):
-        enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+        enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     if r.get("approved"):
         _after_approve(db, m, r)
     enqueue(db, "manyfold.rescan", ref="manyfold:rescan", delay=120)
@@ -726,7 +765,7 @@ def _estimate(db, job):
     r = geometry.estimate_model(db, m, overwrite=job.payload.get("overwrite", False))
     if r.get("applied"):
         event(db, f"model:{m.id}", f"Filament estimated from geometry: about {r['estimate_g']:.0f} g")
-        enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+        enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     return r
 
 
@@ -753,9 +792,9 @@ def _grants_check(db, job):
             still = [m for m in live if licensing.sale_problems(m)]      # another grant may still cover them
             if still and hide:
                 for m in still:
-                    enqueue(db, "woo.set_live", ref=f"product:{m.product.id}:live",
-                            payload={"product_id": m.product.id, "live": False}, dedupe=False)
-                    event(db, f"model:{m.id}", f"Hidden on the store: commercial license '{g.name}' ended", level="warn")
+                    from .services import stores
+                    stores.queue_live(db, m.product, False)
+                    event(db, f"model:{m.id}", f"Hidden on the stores: commercial license '{g.name}' ended", level="warn")
                     hidden += 1
             live = still
         if g.last_alert == key:
@@ -922,6 +961,18 @@ def _spool_library(team):
     return is_connected("spoolman", team.id) or farm_library(team.id)
 
 
+def _any_store(team):
+    from .services import stores
+    return bool(stores.connected_channels(team.id))
+
+
+def _store(channel):
+    def check(team):
+        from .services import stores
+        return stores.connected(channel, team.id)
+    return check
+
+
 def _has_dir(key):
     def check(team):
         return bool((team.source_dirs or {}).get(key))
@@ -966,7 +1017,9 @@ def _has_slices(team) -> bool:
 
 every("inventory.refresh_parts", 300, needs="inventree")
 every("inventory.refresh_spools", 300, needs=_spool_library)
-every("woo.sync_stock", 300, needs="woo")
+every("store.sync_stock", 300, needs=_any_store)
+every("shopify.poll_orders", 600, needs=_store("shopify"))
+every("etsy.poll_orders", 600, needs=_store("etsy"))
 every("woo.poll_orders", 600, needs="woo")
 every("library.scan_deltaprints", 900, needs=_has_dir("deltaprints"))
 every("library.scan_inbox", 120, needs=_has_dir("inbox"))

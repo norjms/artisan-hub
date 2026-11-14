@@ -233,7 +233,7 @@ def adjust_part(part_id: int, body: Adjust, db: Session = Depends(get_db), p: Pr
             inv.remove_stock(batch, note)
     from ..services.inventory import refresh_parts
     refresh_parts(db)
-    enqueue(db, "woo.sync_stock", ref="stock:all", delay=1)
+    enqueue(db, "store.sync_stock", ref="stock:all", delay=1)
     db.commit()
     return {"ok": True}
 
@@ -301,10 +301,15 @@ def orders(db: Session = Depends(get_db), _: Principal = Depends(need("read"))):
     from ..services.farm import order_print_state, routing
     rows = db.execute(select(Order).order_by(Order.placed_at.desc().nullslast(), Order.id.desc()).limit(200)).scalars()
     hub = routing(db) == "hub"
-    return [{"id": o.id, "print": order_print_state(db, o) if hub or o.routed_at else None, "woo_order_id": o.woo_order_id, "number": o.number, "status": o.status, "customer": o.customer,
+    from ..services import stores
+    return [{"id": o.id, "print": order_print_state(db, o) if hub or o.routed_at else None, "woo_order_id": o.woo_order_id,
+             "channel": o.channel or "woo", "store": stores.LABEL.get(o.channel or "woo"), "ext_id": o.ext_id,
+             "number": o.number, "status": o.status, "customer": o.customer,
              "total": o.total, "currency": o.currency, "is_test": o.is_test, "consumed": o.consumed,
              "placed_at": o.placed_at.isoformat() if o.placed_at else None,
-             "woo_url": f"{_pub('woo', 'url')}/wp-admin/post.php?post={o.woo_order_id}&action=edit" if _pub('woo', 'url') else None,
+             **stores.order_links(o),
+             "woo_url": f"{_pub('woo', 'url')}/wp-admin/post.php?post={o.woo_order_id}&action=edit"
+                        if _pub('woo', 'url') and (o.channel or "woo") == "woo" else None,
              "lines": [{"sku": ln.sku, "name": ln.name, "qty": ln.qty, "product_id": ln.product_id,
                         "variant_id": ln.variant_id, "farm_job_ids": ln.farm_job_ids or [], "farm_error": ln.farm_error,
                         "model_id": db.get(Product, ln.product_id).model_id if ln.product_id else None}
@@ -348,7 +353,9 @@ def retry(job_id: int, db: Session = Depends(get_db), _: Principal = Depends(nee
 ACTIONS = {"scan-library": ("library.scan_deltaprints", "manual:scan"), "scan-inbox": ("library.scan_inbox", "manual:inbox"),
            "refresh-parts": ("inventory.refresh_parts", "refresh:parts"),
            "refresh-spools": ("inventory.refresh_spools", "refresh:spools"),
-           "sync-stock": ("woo.sync_stock", "stock:all"), "poll-orders": ("woo.poll_orders", "manual:orders"),
+           "sync-stock": ("store.sync_stock", "stock:all"), "poll-orders": ("woo.poll_orders", "manual:orders"),
+           "poll-shopify-orders": ("shopify.poll_orders", "manual:shopify-orders"),
+           "poll-etsy-orders": ("etsy.poll_orders", "manual:etsy-orders"),
            "manyfold-rescan": ("manyfold.rescan", "manyfold:rescan"), "manyfold-link": ("manyfold.link", "manyfold:link"),
            "setup": ("setup.run", "setup"),
            "license-recheck": ("license.recheck", "manual:license-recheck"),
@@ -570,6 +577,144 @@ async def woo_hook(request: Request, team_slug: str | None = None, db: Session =
             event(db, f"model:{prod.model_id}", f"Status changed in WooCommerce to {body['status']}")
     db.commit()
     return {"ok": True}
+
+
+@router.post("/hooks/shopify")
+@router.post("/hooks/shopify/{team_slug}")
+async def shopify_hook(request: Request, team_slug: str | None = None, db: Session = Depends(get_db)):
+    """Shopify's order webhooks (X-Shopify-Hmac-Sha256: base64 HMAC of the body with the app's client secret). The
+    order is read back from Shopify by a job, so every order goes through the same path as the poll."""
+    from ..services import stores
+    raw = await request.body()
+    tid = _hook_team(db, team_slug)
+    if not stores.shopify_signature_ok(raw, request.headers.get("x-shopify-hmac-sha256", ""), tid):
+        raise HTTPException(401, "bad signature")
+    topic = request.headers.get("x-shopify-topic", "")
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        raise HTTPException(400, "not JSON")
+    if topic.startswith("orders/") and body.get("id"):
+        ext = body.get("admin_graphql_api_id") or f"gid://shopify/Order/{body['id']}"
+        enqueue(db, "stores.ingest_order", ref=f"shopify-order:{body['id']}", payload={"channel": "shopify", "ext_id": ext},
+                delay=2)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/hooks/etsy")
+@router.post("/hooks/etsy/{team_slug}")
+async def etsy_hook(request: Request, team_slug: str | None = None, db: Session = Depends(get_db)):
+    """Etsy's order webhooks (Standard Webhooks signature with the endpoint's signing secret). The body only points
+    at the receipt; a job reads it from Etsy."""
+    from ..services import stores
+    raw = await request.body()
+    tid = _hook_team(db, team_slug)
+    if not stores.etsy_signature_ok(raw, request.headers, tid):
+        raise HTTPException(401, "bad signature")
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        raise HTTPException(400, "not JSON")
+    kind = str(body.get("event_type") or "")
+    url = str(body.get("resource_url") or "")
+    if kind.startswith("order.") and "/receipts/" in url:
+        rid = url.split("/receipts/", 1)[1].split("?")[0].split("/")[0]
+        if rid.isdigit():
+            enqueue(db, "stores.ingest_order", ref=f"etsy-order:{rid}", payload={"channel": "etsy", "ext_id": rid}, delay=2)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- Etsy sign-in ----------
+@router.post("/api/stores/etsy/connect")
+def etsy_connect(db: Session = Depends(get_db), _: Principal = Depends(need("settings"))):
+    """Where to send the shop owner to approve the hub on Etsy (OAuth with PKCE)."""
+    from ..services import stores
+    from ..services.connections import NotConnected
+    try:
+        url = stores.etsy_connect(db)
+    except NotConnected:
+        raise HTTPException(400, "Save the Etsy app's keystring and shared secret first")
+    db.commit()
+    return {"url": url, "redirect_uri": stores.etsy_redirect_uri()}
+
+
+@router.get("/oauth/etsy/callback")
+def etsy_callback(state: str = "", code: str = "", error: str = "", db: Session = Depends(get_db)):
+    from fastapi.responses import RedirectResponse
+    from urllib.parse import quote
+    from ..jobs import PermanentError
+    from ..clients.base import ApiError
+    from ..services import stores
+    team = state.split(".", 1)[0]
+    if error or not code or not team.isdigit():
+        return RedirectResponse(f"/connections?etsy=error&msg={quote(error or 'Etsy did not send a sign-in code')}")
+    from ..tenant import bind_session, set_team
+    bind_session(db, int(team))
+    set_team(int(team))
+    try:
+        info = stores.etsy_finish(db, state, code)
+    except (PermanentError, ApiError) as e:
+        db.rollback()
+        return RedirectResponse(f"/connections?etsy=error&msg={quote(str(getattr(e, 'message', e))[:200])}")
+    db.commit()
+    return RedirectResponse(f"/connections?etsy=connected&shop={quote(str(info.get('shop_name') or ''))}")
+
+
+@router.get("/api/stores/etsy")
+def etsy_status(db: Session = Depends(get_db), _: Principal = Depends(need("settings"))):
+    """The Etsy sign-in state, the callback address to register, and the shop's listing defaults to pick from."""
+    from ..services import stores
+    from ..services.connections import get
+    out = {"configured": bool(get("etsy", required=False)), "connected": stores.connected("etsy"),
+           "shop": setting(db, stores.ETSY_SHOP), "redirect_uri": stores.etsy_redirect_uri(),
+           "webhook_url": f"{settings().public_url.rstrip('/')}/hooks/etsy"}
+    if out["connected"]:
+        try:
+            out["options"] = stores.etsy_options()
+        except Exception as e:  # noqa: BLE001
+            out["options_error"] = str(getattr(e, "message", e))[:300]
+    return out
+
+
+@router.delete("/api/stores/etsy")
+def etsy_signout(db: Session = Depends(get_db), _: Principal = Depends(need("settings"))):
+    from ..services import stores
+    stores.etsy_disconnect(db)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/api/stores")
+def stores_connected(_: Principal = Depends(need("read"))):
+    """The stores this team sells on (woo, shopify, etsy)."""
+    from ..services import stores
+    return {"connected": stores.connected_channels(), "labels": stores.LABEL}
+
+
+class ShipIn(BaseModel):
+    company: str | None = None
+    number: str | None = None
+    url: str | None = None
+
+
+@router.post("/api/orders/{order_id}/ship")
+def ship_order(order_id: int, body: ShipIn, db: Session = Depends(get_db), p: Principal = Depends(need("store"))):
+    """Mark an order shipped in its store (Woo completed, Shopify fulfilled, Etsy shipped), with tracking if given."""
+    from ..clients.base import ApiError
+    from ..services import stores
+    o = db.get(Order, order_id)
+    if not o:
+        raise HTTPException(404)
+    if o.status in ("cancelled", "refunded"):
+        raise HTTPException(400, f"order #{o.number} is {o.status}")
+    try:
+        out = stores.mark_shipped(db, o, body.model_dump(), actor=p.actor)
+    except ApiError as e:
+        raise HTTPException(502, f"{stores.LABEL.get(o.channel, o.channel)}: {e.message[:300]}")
+    db.commit()
+    return out
 
 
 OPHQ_PRINTS = {"print_complete": "queue.job_completed", "print_failed": "queue.job_failed",

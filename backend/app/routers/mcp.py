@@ -288,7 +288,7 @@ def t_approve_slice(db, p, a):
         raise ToolError(str(e))
     m = db.get(Model, r.model_id)
     if out.get("bom_updated"):
-        enqueue(db, "woo.sync_stock", ref="stock:all", delay=5)
+        enqueue(db, "store.sync_stock", ref="stock:all", delay=5)
     _after_approve(db, m, out)
     db.commit()
     return {"model": m.code, **out}

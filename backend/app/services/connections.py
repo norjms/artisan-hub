@@ -17,6 +17,20 @@ from ..tenant import current_team_id, unscoped
 KINDS = {
     "woo": ("WooCommerce store", ["url", "verify_tls"], ["key", "secret", "webhook_secret"],
             "Store URL plus a REST API key (WooCommerce > Settings > Advanced > REST API, read/write)."),
+    "shopify": ("Shopify store", ["shop", "location_id"], ["client_id", "client_secret", "access_token", "webhook_secret"],
+                "The store's myshopify.com name, and the client ID and client secret of an app you made in your Shopify "
+                "Dev Dashboard and installed on the store (scopes: read and write products, inventory, orders and "
+                "merchant-managed fulfillments; read locations). A store with an older custom app can give its Admin "
+                "API access token (shpat_...) and that app's API secret as the webhook secret instead. location_id is "
+                "optional: the location that holds stock (the main location if empty)."),
+    "etsy": ("Etsy shop", ["taxonomy_id", "shipping_profile_id", "return_policy_id", "readiness_state_id", "who_made",
+                           "when_made"],
+             ["keystring", "shared_secret", "webhook_secret"],
+             "The keystring and shared secret of your app at etsy.com/developers/your-apps (add the hub's Etsy "
+             "callback address, shown below, as the app's redirect URI). Save, then use Connect Etsy to sign in "
+             "to the shop. The rest are the defaults every listing needs: Etsy category (taxonomy id), shipping "
+             "profile, return policy, processing time (readiness state), who made it (i_did) and when "
+             "(made_to_order). The webhook secret is the signing secret (whsec_...) from Etsy's Webhook portal."),
     "dam": ("ResourceSpace DAM", ["url", "host", "user"], ["key"],
             "API user and its private key (ResourceSpace > My account > API key). Host is the public name the DAM expects."),
     "openprinthq": ("ArtisanHub Farm", ["url", "public_url", "target_group", "verify_tls"],
@@ -229,6 +243,9 @@ def test(kind: str) -> tuple[bool, str]:
     try:
         if kind == "woo":
             clients.woo().system_status()
+        elif kind in ("shopify", "etsy"):
+            from .stores import test as store_test
+            return store_test(kind)
         elif kind == "dam":
             clients.dam().fields()
         elif kind == "openprinthq":

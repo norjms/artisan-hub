@@ -51,9 +51,28 @@
     } finally { busyLive = false; }
   }
   async function push() {
-    await attempt(() => api.post(`/api/products/${p.id}/push`), 'Pushing to WooCommerce…');
+    const r = await attempt(() => api.post(`/api/products/${p.id}/push`));
+    if (r?.stores) toast(`Pushing to ${r.stores.map((c) => STORE[c] || c).join(', ')}…`);
     setTimeout(load, 1500);
   }
+  const STORE = { woo: 'WooCommerce', shopify: 'Shopify', etsy: 'Etsy' };
+  const stores = $derived(p?.stores || []);
+  const listed = $derived(stores.filter((s) => s.enabled && s.ext_id));
+  const liveOn = $derived(listed.filter((s) => ['active', 'publish'].includes(s.status)));
+  const draftOn = $derived(listed.filter((s) => !['active', 'publish'].includes(s.status)));
+  async function sellOn(s, enabled) {
+    const r = await attempt(() => api.put(`/api/products/${p.id}/stores/${s.channel}`, { enabled }),
+                            enabled ? `Sells on ${s.label}` : `Taken off ${s.label}`);
+    if (r) m.product.stores = r.stores;
+  }
+  const stockText = (st) => {
+    if (!st || !Object.keys(st).length) return '';
+    if ('p' in st) return `${st.p} in stock`;
+    const names = Object.fromEntries((p?.variants || []).map((v) => [String(v.id), v.color_name]));
+    return Object.entries(st).map(([k, v]) => `${names[k] || k} ${v}`).join(', ');
+  };
+  const stateChip = (s) => (!s.enabled ? ['', 'not sold here'] : !s.ext_id ? ['', 'not listed yet'] :
+    ['active', 'publish'].includes(s.status) ? ['live', 'live'] : ['', s.status || 'draft']);
   let delInfo = $state(null);
   let delCode = $state('');
   async function archiveIt() {
@@ -95,7 +114,9 @@
           </div>
         </div>
         <div class="flex flex-wrap gap-1.5 mt-3">
-          {#if p?.live}<span class="chip live">Live on the store</span>{:else if p?.woo_product_id}<span class="chip">Draft on store</span>{:else}<span class="chip">Not on store</span>{/if}
+          {#if liveOn.length}<span class="chip live">Live on {liveOn.map((s) => s.label).join(', ')}</span>{/if}
+          {#if draftOn.length}<span class="chip">Draft on {draftOn.map((s) => s.label).join(', ')}</span>{/if}
+          {#if !listed.length}<span class="chip">Not on a store</span>{/if}
           <button class="chip {m.license?.problems?.length ? (lc.sell ? 'warn' : 'bad') : 'ok'}" onclick={() => (tab = 'license')} title={m.license?.problems?.join('; ') || m.license?.label}>{lc.label}{m.license?.problems?.length ? (lc.sell ? ': needs designer' : ': no selling') : ''}</button>
           {#if m.license?.ip_flags?.length}<span class="chip bad" title="A design license can't grant rights to someone else's brand or character">IP check: {m.license.ip_flags.join(', ')}</span>{/if}
           {#if m.license?.needs_credit}<span class="chip" title={m.license.credit_line}>Credit on listing</span>{/if}
@@ -111,19 +132,40 @@
               <div class="text-xs muted">SKU {p.sku}</div>
             </div>
             <div class="text-right">
-              <div class="text-xs muted mb-1 font-semibold">Live on store</div>
+              <div class="text-xs muted mb-1 font-semibold">Live on stores</div>
               <button class="toggle {p.live ? 'on' : ''} {busyLive ? 'busy' : ''}" onclick={toggleLive} aria-label="Toggle live" disabled={busyLive}></button>
             </div>
           </div>
           <div class="mt-4 flex flex-wrap gap-2">
-            <button class="btn primary" onclick={push}>{p.woo_product_id ? 'Update store listing' : 'Push to store (draft)'}</button>
+            <button class="btn primary" onclick={push} disabled={!stores.some((s) => s.enabled && s.connected)}>{listed.length ? 'Update store listings' : 'Push to stores (draft)'}</button>
             {#if can('store')}<button class="btn" onclick={() => (ordering = true)}>Create order</button>{/if}
-            {#if p.woo_admin_url}<a class="btn" target="_blank" href={p.woo_admin_url}>Edit in WooCommerce</a>{/if}
-            {#if p.live && p.woo_view_url}<a class="btn" target="_blank" href={p.woo_view_url}>View</a>{/if}
           </div>
-          {#if p.woo_error}<div class="mt-3 text-sm" style="color:var(--bad)">Store: {p.woo_error}</div>{/if}
-          {#if p.farm_error}<div class="mt-1 text-sm" style="color:var(--warn)">{FarmName()}: {p.farm_error}</div>{/if}
-          {#if p.woo_synced_at}<div class="mt-2 text-xs muted">Last pushed {ago(p.woo_synced_at)} · stock on store {JSON.stringify(p.woo_stock_pushed)}</div>{/if}
+          {#if !stores.length}<div class="mt-3 text-sm muted">No store is connected. Connect WooCommerce, Shopify or Etsy under <a class="underline" href="/connections">Connections</a>.</div>{/if}
+          <div class="mt-3 flex flex-col gap-2">
+            {#each stores as s (s.channel)}
+              {@const [cls, txt] = stateChip(s)}
+              <div class="ah-store-row">
+                <div class="flex items-center gap-2">
+                  <span class="font-semibold flex-1">{s.label}</span>
+                  <span class="chip {cls}">{txt}</span>
+                  {#if can('store')}
+                    <button class="toggle sm {s.enabled ? 'on' : ''}" aria-label={`Sell on ${s.label}`} title={s.enabled ? `Sold on ${s.label}` : `Not sold on ${s.label}`} onclick={() => sellOn(s, !s.enabled)}></button>
+                  {/if}
+                </div>
+                {#if s.enabled}
+                  {#if !s.connected}<div class="text-xs" style="color:var(--warn)">{s.label} is saved but not signed in (Connections).</div>{/if}
+                  {#if s.error}<div class="text-xs" style="color:var(--bad)">{s.error}</div>{/if}
+                  <div class="text-xs muted flex flex-wrap gap-x-3">
+                    {#if s.synced_at}<span>pushed {ago(s.synced_at)}</span>{/if}
+                    {#if stockText(s.stock)}<span>{stockText(s.stock)}</span>{/if}
+                    {#if s.channel === 'woo' && p.woo_admin_url}<a class="underline" target="_blank" href={p.woo_admin_url}>Edit</a>{:else if s.admin_url}<a class="underline" target="_blank" href={s.admin_url}>Edit</a>{/if}
+                    {#if s.channel === 'woo' && p.live && p.woo_view_url}<a class="underline" target="_blank" href={p.woo_view_url}>View</a>{:else if s.view_url && p.live}<a class="underline" target="_blank" href={s.view_url}>View</a>{/if}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+          {#if p.farm_error}<div class="mt-2 text-sm" style="color:var(--warn)">{FarmName()}: {p.farm_error}</div>{/if}
         {/if}
       </div>
 
@@ -185,6 +227,7 @@
               <ul class="list-disc pl-5 muted">
                 <li>{delInfo.will_remove.photos} photo(s) and {delInfo.will_remove.files} model file(s) in the hub and library{delInfo.will_remove.library_folder ? '' : ''}</li>
                 {#if delInfo.will_remove.woo_draft}<li>the WooCommerce draft</li>{/if}
+                {#each delInfo.will_remove.store_listings || [] as label}<li>the {label} listing</li>{/each}
                 {#if delInfo.will_remove.dam_photos}<li>{delInfo.will_remove.dam_photos} DAM photo(s){delInfo.will_remove.dam_collection ? ' and its collection' : ''}</li>{/if}
                 {#if delInfo.will_remove.farm_files}<li>{delInfo.will_remove.farm_files} file(s) in {farmName()}</li>{/if}
                 <li>Manyfold drops it on its next scan</li>
@@ -281,3 +324,7 @@
 
 {#if ordering && m}<CreateOrder model={m} onclose={() => (ordering = false)} />{/if}
 </Page>
+
+<style>
+  .ah-store-row { border: 1px solid var(--line, rgba(255,255,255,.08)); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+</style>

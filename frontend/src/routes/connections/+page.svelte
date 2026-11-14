@@ -18,8 +18,25 @@
     webhook_secret: 'Webhook secret', api_key: 'API key', password: 'Password', token: 'API token', client_id: 'Client ID',
     client_secret: 'Client secret', ntfy_url: 'ntfy topic URL', ntfy_token: 'ntfy access token (optional)',
     telegram_chat_id: 'Telegram chat id', telegram_bot_token: 'Telegram bot token', slack_webhook_url: 'Slack webhook URL',
-    printers: 'Label printers (JSON list)', model: 'Model', base_url: 'API address (only for another OpenAI-compatible service)'
+    printers: 'Label printers (JSON list)', model: 'Model', base_url: 'API address (only for another OpenAI-compatible service)',
+    shop: 'Store name (my-store.myshopify.com)', location_id: 'Location id for stock (optional)',
+    access_token: 'Admin API access token (older custom apps only)', keystring: 'Keystring', shared_secret: 'Shared secret',
+    taxonomy_id: 'Etsy category (taxonomy id)', shipping_profile_id: 'Shipping profile', return_policy_id: 'Return policy (optional)',
+    readiness_state_id: 'Processing time', who_made: 'Who made it', when_made: 'When it was made'
   };
+  const WHO = [['i_did', 'I did'], ['someone_else', 'Another company or person'], ['collective', 'A member of my shop']];
+  const WHEN = ['made_to_order', '2020_2026', '2010_2019', '2007_2009', 'before_2007'];
+  const ETSY_PICK = { shipping_profile_id: 'shipping_profiles', return_policy_id: 'return_policies', readiness_state_id: 'readiness_states' };
+  let etsy = $state(null);      // GET /api/stores/etsy: configured, connected, shop, redirect_uri, webhook_url, options
+  async function loadEtsy() { try { etsy = await api.get('/api/stores/etsy'); } catch { etsy = null; } }
+  async function connectEtsy() {
+    const r = await attempt(() => api.post('/api/stores/etsy/connect'));
+    if (r?.url) window.location.href = r.url;
+  }
+  async function signOutEtsy() {
+    if (!confirm('Sign the hub out of the Etsy shop? Listings and orders stop syncing until you connect again.')) return;
+    await attempt(() => api.del('/api/stores/etsy'), 'Signed out of Etsy'); loadEtsy(); load();
+  }
   const PRINTERS_EXAMPLE = '[{"name": "Brother QL", "kind": "brother_ql", "host": "192.0.2.20", "port": 9100, "model": "QL-820NWB", "tape": "62x29"}]';
   const isAi = (kind) => kind?.startsWith('ai_');
 
@@ -28,7 +45,13 @@
     aiOrder = (await api.get('/api/ai/order')).order;
     try { lang = await api.get('/api/import-language'); } catch { /* older hub */ }
   }
-  onMount(load);
+  onMount(() => {
+    load(); loadEtsy();
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('etsy') === 'connected') toast(`Etsy shop ${q.get('shop') || ''} connected`, 'ok', 7000);
+    if (q.get('etsy') === 'error') toast(`Etsy: ${q.get('msg') || 'sign-in failed'}`, 'bad', 10000);
+    if (q.get('etsy')) history.replaceState(null, '', '/connections');
+  });
 
   function open(c) {
     edit = { kind: c.kind, label: c.label, help: c.help, config: { ...c.config }, has: { ...c.secrets },
@@ -37,6 +60,10 @@
     if ('verify_tls' in edit.config && edit.config.verify_tls == null) edit.config.verify_tls = true;
     if ('printers' in edit.config) edit.config.printers = JSON.stringify(edit.config.printers || [], null, 2);
     if (isAi(c.kind) && !c.missing) listModels();
+    if (c.kind === 'etsy') {
+      edit.config.who_made ||= 'i_did'; edit.config.when_made ||= 'made_to_order';
+      loadEtsy();
+    }
   }
   async function listModels() {
     if (!edit) return;
@@ -57,7 +84,7 @@
       await attempt(() => api.put(`/api/connections/${edit.kind}`, { config: edit.config, secrets, enabled: edit.enabled }));
       const r = await api.post(`/api/connections/${edit.kind}/test`);
       toast(r.last_test_ok ? `${edit.label} connected` : `Saved, but the test failed: ${r.last_test_msg}`, r.last_test_ok ? 'ok' : 'bad', 7000);
-      edit = null; await load(); loadMe();
+      edit = null; await load(); loadMe(); loadEtsy();
     } finally { busy = ''; }
   }
   async function clearSecret(f) {
@@ -100,8 +127,16 @@
     {#if !c.missing && c.config.model}<div class="text-sm muted truncate">Model: <span class="font-mono">{c.config.model}</span></div>{/if}
     {#if c.last_test_ok === false}<div class="text-xs" style="color:var(--bad)">{c.last_test_msg}</div>{/if}
     {#if c.last_test_at}<div class="text-xs muted">checked {ago(c.last_test_at)}</div>{/if}
+    {#if c.kind === 'etsy' && !c.missing && etsy}
+      {#if etsy.connected}<div class="text-sm muted">Signed in to <b>{etsy.shop?.shop_name}</b></div>
+      {:else}<div class="text-sm" style="color:var(--warn)">Saved. Now sign in to the shop with Connect Etsy.</div>{/if}
+    {/if}
     <div class="flex gap-2 mt-auto pt-1">
       <button class="btn sm primary" onclick={() => open(c)}>{c.missing ? 'Connect' : 'Edit'}</button>
+      {#if c.kind === 'etsy' && !c.missing && etsy}
+        {#if etsy.connected}<button class="btn sm" onclick={signOutEtsy}>Sign out of Etsy</button>
+        {:else}<button class="btn sm primary" onclick={connectEtsy}>Connect Etsy</button>{/if}
+      {/if}
       {#if !c.missing}
         <button class="btn sm" disabled={busy === c.kind} onclick={() => test(c)}>{busy === c.kind ? 'Testing…' : 'Test'}</button>
         <button class="btn sm danger" onclick={() => remove(c)}>Disconnect</button>
@@ -160,12 +195,32 @@
     <div class="panel p-5 w-full max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label="{edit.label} connection">
       <h3 class="font-semibold text-lg mb-1">{edit.label}</h3>
       <p class="text-sm muted mb-4">{edit.help}</p>
+      {#if edit.kind === 'etsy' && etsy}
+        <div class="text-xs muted mb-4 space-y-1">
+          <div>Redirect URI for your Etsy app: <span class="font-mono select-all">{etsy.redirect_uri}</span></div>
+          <div>Webhook address for Etsy's Webhook portal (order.paid, order.canceled, order.shipped): <span class="font-mono select-all">{etsy.webhook_url}</span></div>
+          {#if etsy.connected && !etsy.options}<div style="color:var(--warn)">Could not read the shop's shipping profiles: {etsy.options_error}</div>
+          {:else if !etsy.connected}<div>Sign in with Connect Etsy after saving; the shipping profile and processing time lists fill in then.</div>{/if}
+        </div>
+      {/if}
       <form class="space-y-3" onsubmit={(e) => { e.preventDefault(); save(); }}>
         {#each Object.keys(edit.config) as f}
           {#if f === 'printers'}
             <label class="block text-sm"><span class="font-medium">{LABELS[f]}</span>
               <textarea class="input w-full mt-1 font-mono text-xs" rows="8" bind:value={edit.config[f]} placeholder={PRINTERS_EXAMPLE}></textarea>
               <span class="text-xs muted">kind brother_ql (tape 62x29, 62, 62x100 or 29x90) or zpl (tape WxH in mm, dpi 203 or 300). The phone app can add them too.</span></label>
+          {:else if edit.kind === 'etsy' && ETSY_PICK[f] && etsy?.options?.[ETSY_PICK[f]]?.length}
+            <label class="block text-sm"><span class="font-medium">{LABELS[f]}</span>
+              <select class="input w-full mt-1" bind:value={edit.config[f]}>
+                <option value="">{f === 'return_policy_id' ? 'None' : 'Pick one'}</option>
+                {#each etsy.options[ETSY_PICK[f]] as o}<option value={String(o.id)}>{o.name}</option>{/each}
+              </select></label>
+          {:else if edit.kind === 'etsy' && f === 'who_made'}
+            <label class="block text-sm"><span class="font-medium">{LABELS[f]}</span>
+              <select class="input w-full mt-1" bind:value={edit.config[f]}>{#each WHO as [v, l]}<option value={v}>{l}</option>{/each}</select></label>
+          {:else if edit.kind === 'etsy' && f === 'when_made'}
+            <label class="block text-sm"><span class="font-medium">{LABELS[f]}</span>
+              <select class="input w-full mt-1" bind:value={edit.config[f]}>{#each WHEN as v}<option value={v}>{v === 'made_to_order' ? 'Made to order' : v.replace('_', ' to ').replace('before to ', 'before ')}</option>{/each}</select></label>
           {:else if f === 'verify_tls'}
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={edit.config[f]} /> {LABELS[f]}</label>
           {:else if f === 'model' && isAi(edit.kind)}

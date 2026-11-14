@@ -121,7 +121,7 @@
               <a href="/settings" onclick={() => (userMenu = false)}><Icon name="cog" size={16} />Appearance and settings</a>
               {#if me.links && Object.values(me.links).some(Boolean)}
                 <div class="ah-group-label" style="margin:10px 10px 4px">Systems</div>
-                {#each [['models', 'Models'], ['woo', 'WooCommerce'], ['legacy_farm', 'Legacy farm'], ['dam', 'DAM'], ['manyfold', 'Manyfold'], ['inventree', 'InvenTree'], ['spoolman', 'Spoolman']] as [k, l]}
+                {#each [['models', 'Models'], ['woo', 'WooCommerce'], ['farm', 'ArtisanHub Farm'], ['dam', 'DAM'], ['manyfold', 'Manyfold'], ['inventree', 'InvenTree'], ['spoolman', 'Spoolman']] as [k, l]}
                   {#if me.links[k]}<a target="_blank" rel="noopener" href={me.links[k]}>{l}</a>{/if}
                 {/each}
               {/if}

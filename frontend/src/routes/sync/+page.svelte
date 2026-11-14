@@ -13,7 +13,8 @@
   async function retry(j) { await attempt(() => api.post(`/api/jobs/${j.id}/retry`), 'Retrying'); load(); }
   const RUN = [['scan-library', 'Scan the DeltaPrints library'], ['scan-inbox', 'Scan the inbox'], ['refresh-parts', 'Refresh InvenTree'],
     ['refresh-spools', 'Refresh Spoolman'], ['sync-stock', 'Push stock to WooCommerce'], ['poll-orders', 'Pull WooCommerce orders'],
-    ['manyfold-rescan', 'Rescan Manyfold'], ['manyfold-link', 'Link Manyfold models']];
+    ['manyfold-rescan', 'Rescan Manyfold'], ['manyfold-link', 'Link Manyfold models'],
+    ['setup', 'Set up connected apps (farm webhook, starter categories)']];
 </script>
 
 <Page title="Sync health" description="Every push, import and sync is a job. Failures retry automatically with backoff; you can retry them here.">

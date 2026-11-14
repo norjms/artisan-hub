@@ -53,13 +53,13 @@ class PrinterProfile(TenantMixin, Base):
     __table_args__ = (UniqueConstraint("team_id", "name", name="uq_printer_profile_team_name"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))          # e.g. "H2D"
-    wt_printer: Mapped[str | None] = mapped_column(String(80))          # Legacy farm printer name
+    farm_printer: Mapped[str | None] = mapped_column(String(80))          # the printer's name in the farm
     engine: Mapped[str] = mapped_column(String(10), default="orca")      # orca | prusa
     machine_preset: Mapped[str] = mapped_column(String(200))            # e.g. "Bambu Lab H2D 0.4 nozzle"
     machine_config: Mapped[str | None] = mapped_column(Text)            # imported printer preset (Orca JSON or PrusaSlicer INI)
     # [{"slot": 1, "nozzle": 0.4, "flow": "standard"|"hf", "material": "PLA", "color": "#RRGGBB", "preset": None}]
     tools: Mapped[list] = mapped_column(JSON, default=list)
-    dispatch: Mapped[str] = mapped_column(String(20), default="none")   # none | legacy_farm: where approved files go
+    dispatch: Mapped[str] = mapped_column(String(20), default="none")   # none | farm: where approved files go
     hourly_rate: Mapped[float | None] = mapped_column(Float)            # machine time cost per hour (power, wear); None = team default
     filament_slots: Mapped[int | None] = mapped_column(Integer)         # filaments it can hold incl. AMS; None = one per tool
     bed_type: Mapped[str | None] = mapped_column(String(40))            # build plate always fitted (OrcaSlicer name); None = printer default
@@ -229,10 +229,10 @@ class ModelFile(TenantMixin, Base):
     print_seconds: Mapped[int | None] = mapped_column(Integer)
     filament: Mapped[list] = mapped_column(JSON, default=list)   # [{slot, type, color, grams}]
     settings: Mapped[dict] = mapped_column(JSON, default=dict)
-    # The file's ref in the print farm's library, and which farm app that ref belongs to (farm_kind; NULL on rows
-    # from before 2026-10-23 means Legacy farm). A ref from another farm is not a ref here: see shop.farm_ref().
-    legacy_farm_uuid: Mapped[str | None] = mapped_column(String(80))
-    legacy_farm_error: Mapped[str | None] = mapped_column(Text)
+    # The file's id in ArtisanHub Farm's library (farm_kind "openprinthq"; any other value is a ref the farm cannot
+    # use, so the file is uploaded again on first use: see shop.farm_ref()).
+    farm_file_ref: Mapped[str | None] = mapped_column(String(80))
+    farm_file_error: Mapped[str | None] = mapped_column(Text)
     farm_kind: Mapped[str | None] = mapped_column(String(20))
     is_print_file: Mapped[bool] = mapped_column(Boolean, default=False)   # chosen for production
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -261,8 +261,7 @@ class Product(TenantMixin, Base):
     woo_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     woo_error: Mapped[str | None] = mapped_column(Text)
     woo_stock_pushed: Mapped[dict] = mapped_column(JSON, default=dict)   # {variant_id|"p": qty}
-    wt_mapping_ids: Mapped[dict] = mapped_column(JSON, default=dict)     # {sku: mapping id}
-    wt_error: Mapped[str | None] = mapped_column(Text)
+    farm_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -388,7 +387,7 @@ class Order(TenantMixin, Base):
     consumed: Mapped[bool] = mapped_column(Boolean, default=False)      # parts deducted in InvenTree
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consume_error: Mapped[str | None] = mapped_column(Text)
-    routed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))    # print jobs sent to Legacy farm
+    routed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))    # print jobs sent to the farm
     printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # every print job completed
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))       # when it should ship
     late_alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -407,8 +406,8 @@ class OrderLine(TenantMixin, Base):
     qty: Mapped[int] = mapped_column(Integer, default=1)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("product.id", ondelete="SET NULL"))
     variant_id: Mapped[int | None] = mapped_column(ForeignKey("variant.id", ondelete="SET NULL"))
-    wt_job_ids: Mapped[list] = mapped_column(JSON, default=list)       # Legacy farm jobs printing this line
-    wt_error: Mapped[str | None] = mapped_column(Text)
+    farm_job_ids: Mapped[list] = mapped_column(JSON, default=list)       # farm jobs printing this line
+    farm_error: Mapped[str | None] = mapped_column(Text)
     order: Mapped[Order] = relationship(back_populates="lines")
 
 
@@ -527,7 +526,7 @@ class Installation(Base):
     never inferred from which connections exist (invariant 1). First-run setup is recorded here too."""
     __tablename__ = "installation"
     id: Mapped[int] = mapped_column(primary_key=True)
-    farm: Mapped[str | None] = mapped_column(String(20))               # legacy_farm | openprinthq; None until chosen
+    farm: Mapped[str | None] = mapped_column(String(20))               # openprinthq (ArtisanHub Farm); None until setup connects it
     farm_source: Mapped[str | None] = mapped_column(String(20))        # setup | migrated | legacy
     setup_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     setup_token_hash: Mapped[str | None] = mapped_column(String(64))   # a generated first-run token, until setup completes
@@ -659,7 +658,7 @@ class Invite(Base):
 
 
 class Connection(TenantMixin, Base):
-    """A team's link to an outside service (WooCommerce, Legacy farm, DAM, InvenTree, Spoolman, Manyfold).
+    """A team's link to an outside service (WooCommerce, ArtisanHub Farm, DAM, InvenTree, Spoolman, Manyfold).
     Teams can point at the same instance or their own. Secrets are encrypted at rest."""
     __tablename__ = "connection"
     __table_args__ = (UniqueConstraint("team_id", "kind", name="uq_connection_team_kind"),)
@@ -736,7 +735,7 @@ class PlateSlice(TenantMixin, Base):
 
 
 class PrintRecord(TenantMixin, Base):
-    """A real print of a sliced file: recorded by hand or reported by print-farm software (Legacy farm)."""
+    """A real print of a sliced file: recorded by hand or reported by the print farm."""
     __tablename__ = "print_record"
     __table_args__ = (UniqueConstraint("team_id", "source", "external_id", name="uq_print_record_source"),)
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -746,7 +745,7 @@ class PrintRecord(TenantMixin, Base):
     file_id: Mapped[int | None] = mapped_column(Integer)
     inputs_hash: Mapped[str | None] = mapped_column(String(64))         # which slice version was printed
     outcome: Mapped[str] = mapped_column(String(12))                    # ok | failed | cancelled
-    source: Mapped[str] = mapped_column(String(20), default="manual")   # manual | legacy_farm
+    source: Mapped[str] = mapped_column(String(20), default="manual")   # manual | farm
     external_id: Mapped[str | None] = mapped_column(String(80))
     printer_name: Mapped[str | None] = mapped_column(String(120))
     duration_s: Mapped[int | None] = mapped_column(Integer)
@@ -756,7 +755,7 @@ class PrintRecord(TenantMixin, Base):
 
 
 class FarmJob(TenantMixin, Base):
-    """A print-farm job as Legacy farm last reported it: a mirror of its queue, kept by webhooks and a periodic sync."""
+    """A print-farm job as the farm last reported it: a mirror of its queue, kept by webhooks and a periodic sync."""
     __tablename__ = "farm_job"
     __table_args__ = (UniqueConstraint("team_id", "external_id", name="uq_farm_job_ext"),)
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -767,7 +766,7 @@ class FarmJob(TenantMixin, Base):
     priority: Mapped[int | None] = mapped_column(Integer)
     quantity: Mapped[int | None] = mapped_column(Integer)
     source: Mapped[str | None] = mapped_column(String(40))
-    file_ref: Mapped[str | None] = mapped_column(String(80))           # Legacy farm library file uuid, for reprints
+    file_ref: Mapped[str | None] = mapped_column(String(80))           # the farm library file id, for reprints
     model_id: Mapped[int | None] = mapped_column(ForeignKey("model.id", ondelete="SET NULL"), index=True)
     order_refs: Mapped[list] = mapped_column(JSON, default=list)
     material: Mapped[str | None] = mapped_column(String(40))
@@ -793,7 +792,7 @@ class FarmJob(TenantMixin, Base):
 
 class PlateCheck(TenantMixin, Base):
     """After a print ends the printer waits for someone to clear the plate. The check records what came off it
-    (passed, or failed and why) and, on request, tells Legacy farm the printer is ready again."""
+    (passed, or failed and why) and, on request, tells the farm the printer is ready again."""
     __tablename__ = "plate_check"
     id: Mapped[int] = mapped_column(primary_key=True)
     printer_name: Mapped[str] = mapped_column(String(120), index=True)
@@ -801,7 +800,7 @@ class PlateCheck(TenantMixin, Base):
     external_job_id: Mapped[str | None] = mapped_column(String(40))
     job_name: Mapped[str | None] = mapped_column(String(400))
     model_id: Mapped[int | None] = mapped_column(ForeignKey("model.id", ondelete="SET NULL"))
-    job_outcome: Mapped[str | None] = mapped_column(String(12))        # completed | failed | cancelled (as Legacy farm saw it)
+    job_outcome: Mapped[str | None] = mapped_column(String(12))        # completed | failed | cancelled (as the farm saw it)
     state: Mapped[str] = mapped_column(String(12), default="waiting")  # waiting | passed | failed | skipped
     reason: Mapped[str | None] = mapped_column(String(40))             # failure reason code
     note: Mapped[str | None] = mapped_column(Text)
@@ -812,22 +811,6 @@ class PlateCheck(TenantMixin, Base):
     photo: Mapped[str | None] = mapped_column(String(200))                       # finish photo, under data_dir/farm
     checked_by: Mapped[str | None] = mapped_column(String(200))
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-
-
-class SpoolLink(TenantMixin, Base):
-    """One physical spool known to both Spoolman (the source of truth) and Legacy farm (which records what prints use).
-    last_* are the weights both sides agreed on at the last sync, so each side's change since then can be told apart."""
-    __tablename__ = "spool_link"
-    __table_args__ = (UniqueConstraint("team_id", "spoolman_id", name="uq_spool_link_sm"),
-                      UniqueConstraint("team_id", "wt_spool_id", name="uq_spool_link_wt"))
-    id: Mapped[int] = mapped_column(primary_key=True)
-    spoolman_id: Mapped[int] = mapped_column(Integer)
-    wt_spool_id: Mapped[int] = mapped_column(Integer)
-    last_g: Mapped[float | None] = mapped_column(Float)
-    state: Mapped[str] = mapped_column(String(12), default="ok")       # ok | archived | broken
-    note: Mapped[str | None] = mapped_column(Text)
-    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -858,9 +841,9 @@ class MaintPlan(TenantMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_done_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    wt_schedule_id: Mapped[int | None] = mapped_column(Integer)          # linked Legacy farm maintenance schedule
-    wt_status: Mapped[str | None] = mapped_column(String(20))            # ok | due_soon | overdue | no_data
-    wt_hours_since: Mapped[float | None] = mapped_column(Float)
+    farm_schedule_id: Mapped[int | None] = mapped_column(Integer)          # the linked farm maintenance item
+    farm_status: Mapped[str | None] = mapped_column(String(20))            # ok | due_soon | overdue | no_data
+    farm_hours_since: Mapped[float | None] = mapped_column(Float)
     category: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -884,8 +867,8 @@ class MaintTask(TenantMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     done_by: Mapped[str | None] = mapped_column(String(200))
-    out_of_service: Mapped[bool] = mapped_column(Boolean, default=False)   # printer marked down in Legacy farm
-    wt_note: Mapped[str | None] = mapped_column(Text)                      # what was recorded in Legacy farm
+    out_of_service: Mapped[bool] = mapped_column(Boolean, default=False)   # printer marked out of service in the farm
+    farm_note: Mapped[str | None] = mapped_column(Text)                      # what was recorded in the farm
 
 
 class Quote(TenantMixin, Base):
@@ -916,8 +899,8 @@ class Quote(TenantMixin, Base):
     error: Mapped[str | None] = mapped_column(Text)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("shop_order.id", ondelete="SET NULL"))
     order_line_id: Mapped[int | None] = mapped_column(Integer)
-    wt_file_uuid: Mapped[str | None] = mapped_column(String(80))
-    wt_job_ids: Mapped[list] = mapped_column(JSON, default=list)
+    farm_file_ref: Mapped[str | None] = mapped_column(String(80))
+    farm_job_ids: Mapped[list] = mapped_column(JSON, default=list)
     review_note: Mapped[str | None] = mapped_column(Text)
     reviewed_by: Mapped[str | None] = mapped_column(String(200))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

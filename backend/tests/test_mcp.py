@@ -52,7 +52,7 @@ def test_slice_via_mcp(env, monkeypatch, tmp_path):
         lib.parent.mkdir(parents=True, exist_ok=True)
         lib.write_bytes(b"solid x\nendsolid x\n")
         m.files.append(ModelFile(filename="part.stl", kind="stl", library_rel="mcp/part.stl", sha256="mcp1"))
-        db.add(PrinterProfile(name="MCP-H2D", wt_printer="mcp h2d", machine_preset="Bambu Lab H2D 0.4 nozzle"))
+        db.add(PrinterProfile(name="MCP-H2D", farm_printer="mcp h2d", machine_preset="Bambu Lab H2D 0.4 nozzle"))
     printers = call(c, "list_printers")
     assert "MCP-H2D" in printers["content"][0]["text"]
     found = call(c, "find_models", {"query": "mcp slice"})

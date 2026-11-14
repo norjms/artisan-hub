@@ -47,12 +47,6 @@ def manyfold():
     return _cached("manyfold", c, lambda: ManyfoldClient(c.get("url"), c.get("client_id"), c.get("client_secret"), c.get("public_url")))
 
 
-def legacy_farm():
-    from .legacy_farm_api import LegacyFarmClient
-    c = _cfg("legacy_farm")
-    return _cached("legacy_farm", c, lambda: LegacyFarmClient(c.get("url"), c.get("api_key"), c.get("username"), c.get("password")))
-
-
 def openprinthq():
     from .openprinthq_api import OpenPrintHQClient
     c = _cfg("openprinthq")
@@ -60,46 +54,26 @@ def openprinthq():
                                                               verify=c.get("verify_tls", True)))
 
 
-FARM_KINDS = ("legacy_farm", "openprinthq")   # farm apps the hub has a driver for (clients/farm_base.py)
+FARM_KINDS = ("openprinthq",)   # the one farm app: ArtisanHub Farm / OpenPrintHQ (clients/farm_base.py)
 
 
 def farm_kind(team_id: int | None = None) -> str:
-    """The installation's print farm. It is chosen once, explicitly, at first-run setup (invariant 1) and never
-    inferred. Only an installation that predates the choice and could not be migrated unambiguously ("legacy")
-    still infers per team, as it always did, until an admin chooses."""
+    """The installation's print farm: always OpenPrintHQ (ArtisanHub Farm). Raises FarmNotChosen until first-run
+    setup has connected it."""
     from ..services import installation
-    st = installation.state()
-    if st["farm"]:
-        return st["farm"]
-    if st["farm_source"] == "legacy":
-        return _inferred_farm_kind(team_id)
+    if installation.state()["farm"]:
+        return "openprinthq"
     raise installation.FarmNotChosen()
 
 
-def _inferred_farm_kind(team_id: int | None = None) -> str:
-    """The old rule, for legacy installations only: OpenPrintHQ when it is the only one connected, or is marked
-    use_as_farm; otherwise Legacy farm."""
-    from ..services.connections import get, is_connected
-    if is_connected("openprinthq", team_id):
-        if not is_connected("legacy_farm", team_id):
-            return "openprinthq"
-        if (get("openprinthq", team_id, required=False) or {}).get("use_as_farm"):
-            return "openprinthq"
-    return "legacy_farm"
-
-
 def farm():
-    """The team's print farm, as the farm interface (clients/farm_base.py). Use this, not legacy_farm(), for farm work."""
-    return openprinthq() if farm_kind() == "openprinthq" else legacy_farm()
+    """The team's print farm, as the farm interface (clients/farm_base.py)."""
+    return openprinthq()
 
 
 def farm_connected(team_id: int | None = None) -> bool:
     from ..services.connections import is_connected
-    from ..services.installation import FarmNotChosen
-    try:
-        return is_connected(farm_kind(team_id), team_id)
-    except FarmNotChosen:
-        return False
+    return is_connected("openprinthq", team_id)
 
 
 def inventree():

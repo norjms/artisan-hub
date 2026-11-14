@@ -33,7 +33,7 @@ from ..models import (PERMS, ApiKey, Event, FarmJob, Membership, Order, PartCach
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
 API_VERSION = 1
-RELAY_APPS = ("legacy_farm", "legacy_farm-web", "openprinthq", "spoolman", "inventree", "woo", "dam", "manyfold", "moonraker")
+RELAY_APPS = ("openprinthq", "spoolman", "inventree", "woo", "dam", "manyfold", "moonraker")
 COARSE = ("read", "write", "admin")
 RELAY_MAX = 20 * 1024 * 1024
 
@@ -97,7 +97,7 @@ def overview(db: Session = Depends(get_db), p: Principal = Depends(need("view"))
     try:
         from ..services import printer_status
         out["printers"] = [_printer(x) for x in printer_status.annotate(
-            db, printer_access.visible(db, p, _wt().printers().get("printers", [])))]
+            db, printer_access.visible(db, p, _farm().printers().get("printers", [])))]
     except Exception as e:  # noqa: BLE001
         out["errors"]["printers"] = str(getattr(e, "message", e))[:200]
     try:
@@ -112,8 +112,8 @@ def overview(db: Session = Depends(get_db), p: Principal = Depends(need("view"))
 
 # ---------------------------------------------------------------- printers and cameras
 
-def _wt():
-    """The team's farm (farm interface); the raw relay below still talks to Legacy farm directly."""
+def _farm():
+    """The team's farm (farm interface)."""
     from ..clients import farm
     return farm()
 
@@ -126,7 +126,7 @@ FAMILY_BRAND = {"bambu": "Bambu Lab", "prusalink": "Prusa"}
 
 def brand_model(preset: str | None, family: str | None) -> tuple[str, str | None]:
     """Make and model from the printer's slicer preset ("Bambu Lab H2C 0.4 nozzle" -> Bambu Lab, H2C); without one, the
-    brand its connection implies (bambu, prusalink), else Other. Legacy farm itself reports neither."""
+    brand its connection implies (bambu, prusalink), else Other."""
     import re
     name = re.sub(r"\s+\d+(\.\d+)?\s*(mm)?\s*nozzle.*$", "", (preset or "").strip(), flags=re.I)
     for b in BRANDS:
@@ -155,7 +155,7 @@ def _job_label(x: dict) -> str | None:
 def _profiles(db) -> dict:
     from ..models import PrinterProfile
     from sqlalchemy import select
-    return {(pp.wt_printer or pp.name): pp.machine_preset for pp in db.execute(select(PrinterProfile)).scalars()}
+    return {(pp.farm_printer or pp.name): pp.machine_preset for pp in db.execute(select(PrinterProfile)).scalars()}
 
 
 def _printer(x: dict, profiles: dict | None = None) -> dict:
@@ -178,7 +178,7 @@ def printers(db: Session = Depends(get_db), p: Principal = Depends(need("view"))
     try:
         prof = _profiles(db)
         return {"printers": [_printer(x, prof) for x in printer_status.annotate(
-            db, printer_access.visible(db, p, _wt().printers().get("printers", [])))]}
+            db, printer_access.visible(db, p, _farm().printers().get("printers", [])))]}
     except Exception as e:  # noqa: BLE001
         _err(e)
 
@@ -189,7 +189,7 @@ def printer(name: str, db: Session = Depends(get_db), p: Principal = Depends(nee
     the job fields the app draws (progress, layer, total_layers, job_name, eta, cover_available)."""
     printer_access.require(db, p, name)
     try:
-        f = _wt()
+        f = _farm()
         out = dict(f.printer(str(name)))
     except Exception as e:  # noqa: BLE001
         _err(e)
@@ -217,7 +217,7 @@ def printer_snapshot(name: str, db: Session = Depends(get_db), p: Principal = De
     """The printer's camera, one JPEG frame."""
     printer_access.require(db, p, name)
     try:
-        data = _wt().snapshot(name)
+        data = _farm().snapshot(name)
     except Exception as e:  # noqa: BLE001
         _err(e)
     if not data:
@@ -236,8 +236,8 @@ def printer_stream(name: str, db: Session = Depends(get_db), p: Principal = Depe
     import time
     from fastapi.responses import StreamingResponse
     try:
-        wt = _wt()
-        sources = wt.camera_sources(name)
+        fc = _farm()
+        sources = fc.camera_sources(name)
     except Exception as e:  # noqa: BLE001
         _err(e)
     if not sources:
@@ -249,7 +249,7 @@ def printer_stream(name: str, db: Session = Depends(get_db), p: Principal = Depe
         while time.monotonic() < end and misses < 10:
             t = time.monotonic()
             try:
-                data = wt.frame(src)
+                data = fc.frame(src)
             except Exception:  # noqa: BLE001
                 data = None
             if data:
@@ -275,12 +275,12 @@ PRINTER_COMMANDS = {"set_ready", "clear_ready", "pause", "resume", "cancel", "st
 
 @router.post("/printers/{name}/command")
 def printer_command(name: str, body: CommandIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
-    """Legacy farm's printer verbs (set_ready, pause, resume, cancel, ...). Legacy farm decides what each printer supports."""
+    """The farm's printer verbs (set_ready, pause, resume, cancel, ...). The farm decides what each printer supports."""
     printer_access.require(db, p, name)
     if body.command not in PRINTER_COMMANDS:
         raise HTTPException(400, f"command must be one of {', '.join(sorted(PRINTER_COMMANDS))}")
     try:
-        out = _wt().command(name, body.command, body.args, confirm=body.confirm)
+        out = _farm().command(name, body.command, body.args, confirm=body.confirm)
     except Exception as e:  # noqa: BLE001
         _err(e)
     event(db, "farm", f"{name}: {body.command} from the mobile API", actor=_actor(p))
@@ -308,7 +308,7 @@ def job_priority(job_id: str, body: PriorityIn, db: Session = Depends(get_db), p
     if not 1 <= body.priority <= 100:
         raise HTTPException(400, "priority is 1 to 100 (25 low, 50 normal, 75 high, 100 urgent)")
     try:
-        _wt().set_priority(job_id, body.priority)
+        _farm().set_priority(job_id, body.priority)
     except Exception as e:  # noqa: BLE001
         _err(e)
     fj = db.execute(select(FarmJob).where(FarmJob.external_id == str(job_id))).scalar()
@@ -329,9 +329,9 @@ def job_cancel(job_id: str, body: CancelIn, db: Session = Depends(get_db), p: Pr
     fj = db.execute(select(FarmJob).where(FarmJob.external_id == str(job_id))).scalar()
     try:
         if fj and fj.status in ("printing", "paused", "resuming"):
-            _wt().cancel_job(int(job_id))
+            _farm().cancel_job(int(job_id))
         else:
-            _wt().cancel_queued(job_id, body.reason or f"Cancelled from the mobile API by {_actor(p)}")
+            _farm().cancel_queued(job_id, body.reason or f"Cancelled from the mobile API by {_actor(p)}")
     except Exception as e:  # noqa: BLE001
         _err(e)
     event(db, "farm", f"Job {job_id} cancelled from the mobile API", actor=_actor(p))
@@ -552,9 +552,9 @@ def look(request: Request, skin: str | None = None, all: bool = False, db: Sessi
     if p.get("user_id"):
         u = db.get(User, p["user_id"])
         prefs = (u.prefs or {}) if u else {}
-    want = skin or prefs.get("skin") or "legacy_farm"
+    want = skin or prefs.get("skin") or "openprinthq"
     if skin is not None and skin not in looks.SKINS:
-        raise HTTPException(400, "skin is legacy_farm, openprinthq or classic")
+        raise HTTPException(400, "skin is openprinthq or classic")
     doc = looks.build(want, prefs.get("mode") or "system", all_skins=all)
     if doc is None:
         raise HTTPException(503, "the hub's stylesheet is missing; rebuild the hub")
@@ -680,7 +680,7 @@ def tiles(spool_low_g: float = 150, db: Session = Depends(get_db), p: Principal 
     out: dict = {"api": API_VERSION, "time": now().isoformat(), "errors": {}}
 
     try:
-        prs = [_printer(x) for x in printer_access.visible(db, p, _wt().printers().get("printers", []))]
+        prs = [_printer(x) for x in printer_access.visible(db, p, _farm().printers().get("printers", []))]
         def st(x):
             if x.get("online") is False or x.get("state") in ("offline", "disconnected"):
                 return "offline"
@@ -980,9 +980,6 @@ _KEEP_RESP = {"content-type", "content-disposition", "etag", "last-modified", "c
 def _target(app: str, path: str, p: Principal, db: Session) -> tuple[str, dict, object]:
     """(absolute URL, headers to add, httpx auth) for one relayed request, with the team's stored credentials."""
     from ..services.connections import get
-    if app == "legacy_farm":
-        c = get("legacy_farm")
-        return c["url"].rstrip("/") + "/api/public/v1/" + path, {"Authorization": f"Bearer {c['api_key']}"}, None
     if app == "openprinthq":            # the engine API through the control plane, with the team's API key
         c = get("openprinthq")
         return c["url"].rstrip("/") + "/api/engine/api/v1/" + path, {"Authorization": f"Bearer {c['api_key']}"}, None
@@ -1006,7 +1003,7 @@ def _target(app: str, path: str, p: Principal, db: Session) -> tuple[str, dict, 
         printer, _, rest = path.partition("/")
         url = klipper_hosts(db).get(printer)
         if not url:
-            raise HTTPException(404, f"no Moonraker found for printer {printer!r} (Klipper printers in Legacy farm)")
+            raise HTTPException(404, f"no Moonraker found for printer {printer!r} (Klipper printers in the farm)")
         return url.rstrip("/") + "/" + rest, {}, None
     raise HTTPException(404, f"relay apps: {', '.join(RELAY_APPS)}")
 
@@ -1069,24 +1066,6 @@ async def _relay(app: str, path: str, request: Request, db: Session, p: Principa
             db.commit()
         return {"result": out}
 
-    if app == "legacy_farm-web":         # Legacy farm's signed-in web API through the hub's session
-        import json as _json
-        from starlette.concurrency import run_in_threadpool
-        kw = {"params": dict(request.query_params)}
-        if body:
-            try:
-                kw["json"] = _json.loads(body)
-            except ValueError:
-                raise HTTPException(400, "legacy_farm-web takes JSON bodies")
-        try:
-            out = await run_in_threadpool(lambda: _wt()._priv(method, "/api/" + path, **kw))
-        except Exception as e:  # noqa: BLE001
-            _err(e)
-        if method != "GET":
-            event(db, "relay", f"legacy_farm-web {method} /api/{path}", actor=_actor(p))
-            db.commit()
-        return out
-
     url, add, auth = _target(app, path, p, db)
     headers = {k: v for k, v in request.headers.items() if k.lower() not in _DROP_REQ}
     headers.update(add)
@@ -1112,8 +1091,7 @@ async def _relay(app: str, path: str, request: Request, db: Session, p: Principa
 @router.api_route("/relay/{app}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def relay(app: str, path: str, request: Request, db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
     """Raw access to a connected app's own API, with the team's stored credentials. Paths are relative to:
-    legacy_farm /api/public/v1/, legacy_farm-web /api/ (Legacy farm's web API, the hub's session), openprinthq
-    /api/engine/api/v1/ (OpenPrintHQ's engine, the team's API key), spoolman /api/,
+    openprinthq /api/engine/api/v1/ (ArtisanHub Farm's engine, the team's API key), spoolman /api/,
     inventree /api/, woo /wp-json/, manyfold /, moonraker /<printer>/<path>, dam: POST {"function", "params"}.
     Needs the connections permission and a relay:<app> (or relay:*) scope; changes are written to the event log."""
     return await _relay(app, path, request, db, p)
@@ -1267,7 +1245,7 @@ def pair_preview(code: str, request: Request, db: Session = Depends(get_db)):
         prefs = (u.prefs or {}) if u else {}
     accent = {}
     css = looks.load_css()
-    skin = prefs.get("skin") if prefs.get("skin") in looks.SKINS else "legacy_farm"
+    skin = prefs.get("skin") if prefs.get("skin") in looks.SKINS else "openprinthq"
     if css:
         sl = looks.skin_look(css, skin)
         accent = {"skin": skin, "dark": sl["colors"]["dark"].get("accent"), "light": sl["colors"]["light"].get("accent"),

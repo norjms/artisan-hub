@@ -48,8 +48,8 @@
   }
   async function setRouting(v) {
     const msg = v === 'hub'
-      ? 'Send paid WooCommerce orders to Legacy farm from the hub? Legacy farm stops queuing orders from its own shop link (SKU mappings are updated to auto-queue off when products are next pushed).'
-      : 'Go back to Legacy farm queuing orders from its shop link? The hub stops sending order jobs.';
+      ? 'Send paid WooCommerce orders to the farm from the hub?'
+      : 'Stop sending orders to the farm? Order jobs are then queued by hand.';
     if (!confirm(msg)) return;
     await saveSettings({ order_routing: v }, 'Order routing changed');
   }
@@ -395,11 +395,11 @@
           <h2 class="font-semibold">WooCommerce orders</h2>
           <div class="flex gap-2">
             <button class="btn {st.order_routing === 'hub' ? 'primary' : ''}" disabled={!edit || st.order_routing === 'hub'} onclick={() => setRouting('hub')}>Hub sends them</button>
-            <button class="btn {st.order_routing === 'shim' ? 'primary' : ''}" disabled={!edit || st.order_routing === 'shim'} onclick={() => setRouting('shim')}>Legacy farm's shop link</button>
+            <button class="btn {st.order_routing === 'off' ? 'primary' : ''}" disabled={!edit || st.order_routing === 'off'} onclick={() => setRouting('off')}>Queue by hand</button>
           </div>
           <p class="text-xs muted">{st.order_routing === 'hub'
-            ? 'Paid orders go to Legacy farm from the hub (by SKU mapping, else the approved print file). Cancelled orders pull jobs that have not started. When every job has printed the Woo order gets a private note.'
-            : 'Legacy farm picks orders up through the Shopify shim and queues them from its SKU mappings.'}</p>
+            ? 'Paid orders go to the farm from the hub (the approved print files). Cancelled orders pull jobs that have not started. When every job has printed the Woo order gets a private note.'
+            : 'Orders are not sent to the farm: queue their prints by hand.'}</p>
           <label class="text-sm">Orders should ship within
             <input class="input inline-block" style="width: 5rem" type="number" min="1" max="60" disabled={!edit} value={st.ship_within_days}
               onchange={(e) => saveSettings({ ship_within_days: Number(e.target.value) })} /> days of being placed (the default due date)</label>

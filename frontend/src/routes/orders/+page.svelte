@@ -9,7 +9,7 @@
   async function poll() { await api.post('/api/actions/poll-orders'); setTimeout(load, 3000); }
 </script>
 
-<Page title="Orders" description={`From WooCommerce (webhook and a 10 minute poll). ${farmName() === 'Legacy farm' ? 'Legacy farm receives them through the shop bridge, or from the hub' : 'The farm receives them from the hub'} when the Farm overview says so.`}>
+<Page title="Orders" description={`From WooCommerce (webhook and a 10 minute poll). The farm receives them from the hub when the Farm overview says so.`}>
 {#snippet actions()}<button class="btn" onclick={poll}>Check WooCommerce now</button>{/snippet}
 <section class="ah-glass ah-card ah-scroll" style="flex:1">
   <h2 class="ah-card-title">{orders.length} {orders.length === 1 ? 'order' : 'orders'}</h2>

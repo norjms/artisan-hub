@@ -4,12 +4,12 @@
    Where the look comes from, first match wins:
    1. the ah_look cookie the hub sets on its own parent domain (apps on the same domain, the sign-in pages);
    2. /_ahtheme/look, which npmplus answers for apps behind Authentik forward auth (Spoolman, Manyfold);
-   3. what this app saw last time (localStorage), else Legacy farm following the device's light/dark. */
+   3. what this app saw last time (localStorage), else the openprinthq skin following the device's light/dark. */
 (function () {
   var me = document.currentScript, app = (me && me.getAttribute('data-app')) || 'app';
-  var html = document.documentElement, SKINS = { legacy_farm: 1, openprinthq: 1, classic: 1 }, MODES = { system: 1, light: 1, dark: 1 };
+  var html = document.documentElement, SKINS = { openprinthq: 1, classic: 1 }, MODES = { system: 1, light: 1, dark: 1 };
   var mq = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
-  var look = { skin: 'legacy_farm', mode: 'system' }, applied = null;
+  var look = { skin: 'openprinthq', mode: 'system' }, applied = null;
 
   function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }

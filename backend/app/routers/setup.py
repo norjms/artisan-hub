@@ -58,7 +58,7 @@ def status(db: Session = Depends(get_db)) -> Status:
 
 
 class InitializeIn(BaseModel):
-    farm: Literal["legacy_farm", "openprinthq"]
+    farm: Literal["openprinthq"] = "openprinthq"   # ArtisanHub Farm, the only farm; kept for older installers
     team_name: str = Field(min_length=1, max_length=120)
     key_name: str = Field(default="ArtisanHub installer", min_length=1, max_length=80)
 

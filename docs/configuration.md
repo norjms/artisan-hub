@@ -97,16 +97,12 @@ host name, for example `define('ARTISAN_HUB_HOST', 'hub.example.com');`.
 
 ## Print farm
 
-Each installation uses one print farm, chosen at first-run setup: OpenPrintHQ or Legacy farm. Its connection is
-made in the UI. The Legacy farm settings below are optional fallbacks.
+The print farm is ArtisanHub Farm (OpenPrintHQ). First-run setup records it, and its connection is made in the UI
+(Settings, Connected services) with an OpenPrintHQ API key. See `docs/farm.md`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `HUB_WT_URL` | empty | Legacy farm address the hub calls. |
-| `HUB_WT_PUBLIC_URL` | empty | Legacy farm address for links. Seeds new teams. |
-| `HUB_WT_API_KEY` | empty | *Secret.* Legacy farm API key. |
-| `HUB_WT_USERNAME` | empty | Legacy farm web user, for the SKU mapping API. |
-| `HUB_WT_PASSWORD` | empty | *Secret.* Its password. |
+| `HUB_FARM_MOVE` | empty | `openprinthq` moves an installation set up with a farm app the hub no longer supports to ArtisanHub Farm at the next start (`docs/farm.md`, Moving from another farm). |
 
 ## InvenTree
 

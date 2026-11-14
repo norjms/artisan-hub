@@ -34,7 +34,7 @@ def _approved(c, mid, name="Print H2D"):
         pid = db.execute(select(PrinterProfile.id).where(PrinterProfile.name == name)).scalar()
     if not pid:
         pid = c.post("/api/printer-profiles", json={"name": name, "engine": "orca", "machine_preset": "Bambu Lab H2D 0.4 nozzle",
-                                                    "wt_printer": "H2D"}).json()["id"]
+                                                    "farm_printer": "H2D"}).json()["id"]
     with session_scope() as db:
         slicing.slice_model(db, mid, pid, {"approve": True})
     return pid

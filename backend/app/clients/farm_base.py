@@ -1,11 +1,8 @@
-"""The print farm, whichever app runs it (2026-10-22).
+"""The print farm: ArtisanHub Farm (OpenPrintHQ).
 
-The hub talks to its farm only through this interface. Two drivers: Legacy farm (clients/legacy_farm_api.py) and,
-later, OpenPrintHQ. Each driver lists the capabilities it has; a hub feature that needs one checks
-`farm().has(...)` (or catches FarmUnsupported) and hides or adapts itself instead of failing.
-
-Shapes follow Legacy farm's public API v1 for now, since that is what the hub already reads; the OpenPrintHQ
-driver maps its answers to the same shapes.
+The hub talks to its farm only through this interface; clients/openprinthq_api.py is the driver. The driver lists
+the capabilities it has; a hub feature that needs one checks `farm().has(...)` (or catches FarmUnsupported) and
+hides or adapts itself instead of failing, since an older engine may not have every feature yet.
 """
 from .base import ApiError
 
@@ -22,8 +19,6 @@ CAPABILITIES = {
     "filament": "What each printer has loaded, slot by slot",
     "spools": "The farm's own spool list",
     "webhooks": "Push job and printer events to the hub",
-    "sku_mapping": "Print a job by store SKU (the farm keeps SKU to file mappings)",
-    "storefronts": "The farm's own store connections and orders",
     "maintenance": "Maintenance schedules: read them and mark them done",
     "out_of_service": "Take a printer out of service (no new jobs) and list the ones that are",
     "maintenance_log": "Log maintenance that has no schedule",
@@ -39,7 +34,7 @@ CAPABILITIES = {
 }
 
 # Printer commands the hub knows. A printer dict may carry "commands", the ones its connection supports; a
-# printer without the key supports all of them (Legacy farm, older OpenPrintHQ engines).
+# printer without the key supports all of them (older engines).
 ALL_COMMANDS = ("set_ready", "clear_ready", "pause", "resume", "cancel", "stop", "home", "light_on", "light_off",
                 "set_temperature", "preheat", "cooldown")
 
@@ -62,7 +57,7 @@ class FarmUnsupported(ApiError):
 class FarmBackend:
     """What the hub needs from a print farm. Drivers override what they support."""
 
-    kind = ""                     # "legacy_farm" | "openprinthq"
+    kind = ""                     # "openprinthq"
     label = ""                    # shown in the UI
     CAPABILITIES: frozenset = frozenset()
 
@@ -87,7 +82,7 @@ class FarmBackend:
     def upload_file(self, path, filename=None):
         self._no("files")
 
-    def submit_job(self, file_ref=None, sku=None, quantity=1, job_name=None, priority=None, max_retries=None,
+    def submit_job(self, file_ref=None, quantity=1, job_name=None, priority=None, max_retries=None,
                    printer=None, start=False):
         """Queue a library file. printer pins it to one farm printer; start (with printer) asks the farm to start
         it there now when that printer is free and its bed is clear."""
@@ -163,34 +158,6 @@ class FarmBackend:
 
     def delete_webhook(self, hook_id):
         self._no("webhooks")
-
-    # ---- store (SKU mappings, storefronts) ----
-    def order(self, order_id):
-        self._no("storefronts")
-
-    def storefronts(self):
-        self._no("storefronts")
-
-    def shop_orders(self):
-        self._no("storefronts")
-
-    def sync_products(self):
-        self._no("storefronts")
-
-    def sku_mappings(self):
-        self._no("sku_mapping")
-
-    def create_sku_mapping(self, data):
-        self._no("sku_mapping")
-
-    def update_sku_mapping(self, mid, data):
-        self._no("sku_mapping")
-
-    def delete_sku_mapping(self, mid):
-        self._no("sku_mapping")
-
-    def set_mapping_parts(self, mid, parts):
-        self._no("sku_mapping")
 
     # ---- library folders ----
     def library_folder(self, name: str, parent=None) -> dict:

@@ -95,7 +95,7 @@
   async function bulkModels(action) {
     let confirm = null;
     if (action === 'delete') {
-      confirm = prompt(`Permanently delete ${selected.size} model(s)? This removes their photos, files, store drafts, DAM photos and ${farmName() === 'Legacy farm' ? 'Legacy farm files' : 'files in the farm'}, and stops them being re-imported. License records are kept. Type DELETE to confirm.`);
+      confirm = prompt(`Permanently delete ${selected.size} model(s)? This removes their photos, files, store drafts, DAM photos and files in the farm, and stops them being re-imported. License records are kept. Type DELETE to confirm.`);
       if (confirm == null) return;
     }
     const r = await attempt(() => api.post('/api/models/bulk', { model_ids: [...selected], action, confirm }));

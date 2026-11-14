@@ -9,7 +9,7 @@ import json
 import re
 from pathlib import Path
 
-SKINS = ("legacy_farm", "openprinthq", "classic")
+SKINS = ("openprinthq", "classic")
 MODES = ("light", "dark")
 PREFS_MODES = ("system", "light", "dark")
 
@@ -129,7 +129,7 @@ def build(skin: str, mode: str, all_skins: bool = False) -> dict | None:
     css = load_css()
     if css is None:
         return None
-    skin = skin if skin in SKINS else "legacy_farm"
+    skin = skin if skin in SKINS else "openprinthq"
     mode = mode if mode in PREFS_MODES else "system"
     out = {"version": 1, "skin": skin, "mode": mode, **{k: v for k, v in skin_look(css, skin).items() if k != "skin"},
            "wordmark": _wordmark(), "skins": list(SKINS),

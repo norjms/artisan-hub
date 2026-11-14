@@ -20,7 +20,7 @@ log = logging.getLogger("hub.jobs")
 HANDLERS: dict = {}
 # Bulk background work yields to anything a person (or an order) is waiting on.
 PRIORITY = {"import.folder": 8, "dam.sync_model": 7, "dam.refresh_metadata": 7, "library.scan_deltaprints": 6,
-            "manyfold.link": 6, "manyfold.rescan": 6, "legacy_farm.mirror_model": 9}
+            "manyfold.link": 6, "manyfold.rescan": 6, "farm.mirror_model": 9}
 
 
 def handler(kind: str):

@@ -61,8 +61,8 @@ def rig(env, monkeypatch, tmp_path):
     monkeypatch.setattr(slicing, "client", lambda: fake)
     monkeypatch.setattr(clients, "farm", lambda: farm)
     monkeypatch.setattr(clients, "farm_kind", lambda team_id=None: "openprinthq")
+    monkeypatch.setattr(clients, "farm_connected", lambda team_id=None: True)
     monkeypatch.setattr(shop, "farm", lambda: farm)
-    monkeypatch.setattr(shop, "farm_kind", lambda team_id=None: "openprinthq")
     c = TestClient(app)
     from app.db import session_scope
     from app.models import FarmJob
@@ -81,7 +81,7 @@ def _profile(c, name="Plate H2D"):
         if got:
             return got
     return c.post("/api/printer-profiles", json={"name": name, "engine": "orca", "machine_preset": "Bambu Lab H2D 0.4 nozzle",
-                                                 "bed_type": "Textured PEI Plate", "wt_printer": "H2D"}).json()["id"]
+                                                 "bed_type": "Textured PEI Plate", "farm_printer": "H2D"}).json()["id"]
 
 
 def _plate_id(c, name):
@@ -242,11 +242,11 @@ def test_problems_go_to_review_then_approve(rig, monkeypatch):
     assert c.post(f"/api/plate-slices/{ps_id}/approve").status_code == 409
 
 
-def test_skipped_without_openprinthq(rig, monkeypatch):
+def test_skipped_without_a_connected_farm(rig, monkeypatch):
     from app import clients
     from app.db import session_scope
     from app.services import plate_reslice
-    monkeypatch.setattr(clients, "farm_kind", lambda team_id=None: "legacy_farm")
+    monkeypatch.setattr(clients, "farm_connected", lambda team_id=None: False)
     with session_scope() as db:
         assert "skipped" in plate_reslice.scan(db)
 

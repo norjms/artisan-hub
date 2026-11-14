@@ -12,7 +12,7 @@ def test_plate_and_service_from_the_app(rig, monkeypatch):
     calls = []
     farm.set_down = lambda name, down, reason="": calls.append((name, down))
     monkeypatch.setattr(mobile_control, "_farm", lambda: farm)
-    pid = c.post("/api/printer-profiles", json={"name": "App H2D", "engine": "orca", "wt_printer": "AppH2D",
+    pid = c.post("/api/printer-profiles", json={"name": "App H2D", "engine": "orca", "farm_printer": "AppH2D",
                                                 "machine_preset": "Bambu Lab H2D 0.4 nozzle"}).json()["id"]
     r = c.get(f"{M}/printers/apph2d/plate")                   # any case
     assert r.status_code == 200, r.text

@@ -17,7 +17,7 @@ in the shared Manyfold library (`/srv/library`, Manyfold `/libraries/artisan`) f
 the files show up in Manyfold for reslicing without a second store.
 
 Not into the OpenPrintHQ engine's library: the hub hands print-ready files to the farm through its existing
-Legacy farm/OpenPrintHQ paths (slicing, `legacy_farm.mirror_model`), and imported source models are not print-ready.
+paths (slicing, `farm.mirror_model`), and imported source models are not print-ready.
 Not a parallel store either: one import path (`sources.run_import` -> `sources.base.import_normalized`) serves the
 web app, the phone and the add-on.
 

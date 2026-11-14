@@ -1,4 +1,4 @@
-"""Farm: Legacy farm's queue as the hub mirrors it, and plate checks after each print."""
+"""Farm: the farm's queue as the hub mirrors it, and plate checks after each print."""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -79,9 +79,9 @@ def sync_now(db: Session = Depends(get_db), _: Principal = Depends(need("farm"))
     try:
         out = farm.sync(db)
     except NotConnected:
-        raise HTTPException(400, "Legacy farm isn't connected")
+        raise HTTPException(400, "ArtisanHub Farm isn't connected")
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"Legacy farm: {(getattr(e, 'message', None) or str(e))[:300]}")
+        raise HTTPException(502, f"ArtisanHub Farm: {(getattr(e, 'message', None) or str(e))[:300]}")
     db.commit()
     return out
 
@@ -166,8 +166,8 @@ def farm_settings(body: FarmSettings, db: Session = Depends(get_db), p: Principa
     if body.route_test_orders is not None:
         set_setting(db, "route_test_orders", body.route_test_orders)
     if body.order_routing is not None:
-        if body.order_routing not in ("shim", "hub"):
-            raise HTTPException(400, "order routing is shim or hub")
+        if body.order_routing not in farm.ROUTING:
+            raise HTTPException(400, "order routing is hub or off")
         if body.order_routing != farm.routing(db):
             set_setting(db, "order_routing", body.order_routing)
             event(db, "team", f"Order routing set to {body.order_routing}", actor=_actor(p))
@@ -265,49 +265,6 @@ def waiting_count(db: Session) -> int:
     return db.execute(select(func.count(PlateCheck.id)).where(PlateCheck.state == "waiting")).scalar() or 0
 
 
-# ---------- Spoolman <-> Legacy farm spools ----------
-
-@router.get("/api/spools/sync")
-def spool_sync_status(db: Session = Depends(get_db), _: Principal = Depends(need("view"))):
-    from ..services import spoolsync
-    return spoolsync.status(db)
-
-
-class SpoolSyncIn(BaseModel):
-    dry_run: bool = False
-
-
-@router.post("/api/spools/sync")
-def spool_sync_run(body: SpoolSyncIn, db: Session = Depends(get_db), _: Principal = Depends(need("inventory"))):
-    from ..jobs import enqueue
-    from ..services import spoolsync
-    try:
-        out = spoolsync.sync(db, dry_run=body.dry_run)
-    except NotConnected as e:
-        raise HTTPException(400, str(e))
-    except Exception as e:  # noqa: BLE001
-        db.rollback()
-        raise HTTPException(502, (getattr(e, "message", None) or str(e))[:400])
-    if body.dry_run:
-        db.rollback()
-    else:
-        enqueue(db, "inventory.refresh_spools", ref="refresh:spools", delay=1)
-        db.commit()
-    return out
-
-
-class SpoolSyncSettings(BaseModel):
-    enabled: bool
-
-
-@router.put("/api/spools/sync")
-def spool_sync_settings(body: SpoolSyncSettings, db: Session = Depends(get_db), _: Principal = Depends(need("settings"))):
-    set_setting(db, "spool_sync", body.enabled)
-    db.commit()
-    return {"enabled": body.enabled}
-
-
-
 # ---------- timeline and order dates ----------
 
 @router.get("/api/farm/timeline")
@@ -399,7 +356,7 @@ def maint_task_new(body: TaskIn, db: Session = Depends(get_db), p: Principal = D
         try:
             maintenance.set_out_of_service(db, t, True, _actor(p))
         except Exception as e:  # noqa: BLE001
-            t.wt_note = f"Couldn't take {t.printer_name} out of service: {(getattr(e, 'message', None) or str(e))[:200]}"
+            t.farm_note = f"Couldn't take {t.printer_name} out of service: {(getattr(e, 'message', None) or str(e))[:200]}"
     db.commit()
     return maintenance.task_dict(t)
 
@@ -410,7 +367,7 @@ class ServiceIn(BaseModel):
 
 @router.post("/api/maintenance/tasks/{tid}/service")
 def maint_task_service(tid: int, body: ServiceIn, db: Session = Depends(get_db), p: Principal = Depends(need("farm"))):
-    """Take the task's printer out of service in Legacy farm (no new jobs), or bring it back."""
+    """Take the task's printer out of service in the farm (no new jobs), or bring it back."""
     from ..models import MaintTask
     from ..services import maintenance
     t = db.get(MaintTask, tid)
@@ -428,7 +385,7 @@ def maint_task_service(tid: int, body: ServiceIn, db: Session = Depends(get_db),
 
 @router.post("/api/maintenance/sync")
 def maint_sync(db: Session = Depends(get_db), _: Principal = Depends(need("farm"))):
-    """Pull Legacy farm's schedules now and open any tasks that are due."""
+    """Pull the farm's maintenance items now and open any tasks that are due."""
     from ..services import maintenance
     out = maintenance.check_plans(db)
     db.commit()
@@ -519,8 +476,8 @@ def maint_plan_edit(pid: int, body: PlanIn, db: Session = Depends(get_db), _: Pr
     p = db.get(MaintPlan, pid)
     if not p:
         raise HTTPException(404)
-    if p.wt_schedule_id:
-        # linked to Legacy farm: the task and its interval are Legacy farm's; the hub keeps parts, notes and on/off
+    if p.farm_schedule_id:
+        # linked to the farm: the task and its interval are the farm's; the hub keeps parts, notes and on/off
         try:
             p.parts = maintenance.clean_parts(body.parts)
         except ValueError as e:
@@ -540,8 +497,8 @@ def maint_plan_delete(pid: int, db: Session = Depends(get_db), _: Principal = De
     p = db.get(MaintPlan, pid)
     if not p:
         raise HTTPException(404)
-    if p.wt_schedule_id:
-        raise HTTPException(400, "this plan comes from Legacy farm's Maintenance tab: turn it off here or remove it there")
+    if p.farm_schedule_id:
+        raise HTTPException(400, "this plan comes from the farm's maintenance: turn it off here or remove it there")
     db.delete(p)
     db.commit()
     return {"ok": True}
@@ -589,7 +546,7 @@ def filament_printers(db: Session = Depends(get_db), _: Principal = Depends(need
 
 @router.put("/api/farm/filament/printers")
 def filament_printers_set(body: MoonrakerIn, db: Session = Depends(get_db), _: Principal = Depends(need("admin"))):
-    """Add or override a printer's Moonraker URL ("" turns one off); keyed by the printer's Legacy farm name."""
+    """Add or override a printer's Moonraker URL ("" turns one off); keyed by the printer's name in the farm."""
     from ..services import filament_use
     urls = {k.strip(): v.strip() for k, v in body.urls.items() if k.strip()}
     for v in urls.values():

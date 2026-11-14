@@ -1,8 +1,7 @@
-"""One call for the Legacy farm Print Queue plugin for OrcaSlicer (its optional Artisan Hub connection).
+"""One call for the ArtisanHub add-on for OrcaSlicer.
 
-The plugin's Legacy farm tab shows the hub's farm features next to Legacy farm's own: plate checks (with the
-camera photo), staggered start, the timeline and order due dates, maintenance, real filament use, the spool
-sync, report totals and quotes waiting. It polls this endpoint with a team API key; actions use the regular
+The add-on's farm tab shows the hub's farm features: plate checks (with the camera photo), staggered start, the
+timeline and order due dates, maintenance, real filament use, report totals and quotes waiting. It polls this endpoint with a team API key; actions use the regular
 endpoints (plate checks, maintenance, orders).
 """
 from datetime import timedelta
@@ -28,7 +27,7 @@ def _safe(fn, *a, **kw):
 
 @router.get("/api/plugin/farm")
 def plugin_farm(db: Session = Depends(get_db), p: Principal = Depends(need("view"))):
-    from ..services import farm, filament_use, maintenance, reports, schedule, spoolsync
+    from ..services import farm, filament_use, maintenance, reports, schedule
     from ..kv import setting
     out = {"api": PLUGIN_API, "team": p.get("team_name"), "errors": {},
            "can_act": "farm" in (p.get("perms") or [])}
@@ -65,9 +64,6 @@ def plugin_farm(db: Session = Depends(get_db), p: Principal = Depends(need("view
         out["filament"] = fu
     else:
         out["errors"]["filament"] = err
-    ss = spoolsync.status(db)
-    out["spools"] = {"enabled": ss["enabled"], "last": ss["last"], "linked": len(ss["links"]),
-                     "broken": sum(1 for x in ss["links"] if x["state"] == "broken")}
     rp, err = _safe(reports.farm, db, 30)
     if rp:
         out["report"] = rp["totals"]

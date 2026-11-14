@@ -1,7 +1,7 @@
-"""Farm reports: failures and waste (from the Legacy farm job mirror and plate checks), printer use, and profit per
+"""Farm reports: failures and waste (from the farm job mirror and plate checks), printer use, and profit per
 SKU and per printer-hour (from approved slices, BOM parts and prices).
 
-Grams per job are Legacy farm's estimate from the sliced file; a failed or cancelled job counts the share it got
+Grams per job are the farm's estimate from the sliced file; a failed or cancelled job counts the share it got
 through (its progress, else its run time against the estimate). Costs use the same prices as the slicing cost
 (Spoolman or team material prices, printer hourly rates). Revenue is units sold at list price."""
 from collections import defaultdict
@@ -97,7 +97,7 @@ def _farm(db: Session, days: int) -> dict:
             elif fj.status == "cancelled":
                 key = "Cancelled mid-print"
             else:
-                key = "Failed in Legacy farm" + (f": {fj.error[:60]}" if fj.error else "")
+                key = "Failed in the farm" + (f": {fj.error[:60]}" if fj.error else "")
             r = reasons[key]
             r["count"] += 1
             r["grams"] += n["grams"]

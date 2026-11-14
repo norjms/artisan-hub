@@ -79,7 +79,7 @@ def test_the_api_shows_the_farm_group_to_people_signed_in_with_an_installed_farm
                                                           "app": "https://hub.example/apps/farm"})
     signed_in = _client().get("/api/nav/v1").json()       # the tests' development sign-in
     assert [g["label"] for g in signed_in["groups"]][:2] == ["Print", "Farm"]
-    monkeypatch.setattr(nav_router, "farm_info", lambda: {"kind": "legacy_farm", "label": "Legacy farm", "app": None})
+    monkeypatch.setattr(nav_router, "farm_info", lambda: {"kind": None, "label": "the farm", "app": None})
     assert "Farm" not in [g["label"] for g in _client().get("/api/nav/v1").json()["groups"]]
     monkeypatch.setattr(settings(), "dev_auth_bypass", False)
     anon = _client().get("/api/nav/v1").json()

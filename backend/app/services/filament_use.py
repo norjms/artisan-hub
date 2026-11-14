@@ -2,15 +2,15 @@
 
 Each finished farm job gets `used_g` and where it came from (`used_source`), best first:
 - printer: the printer reported it. Klipper printers (Moonraker) keep a history of every job with the filament
-  extruded in mm; the hub matches the Legacy farm job to the printer's history entry by its start and end times and
+  extruded in mm; the hub matches the farm job to the printer's history entry by its start and end times and
   turns mm into grams with the filament's density and diameter.
 - weighed: a spool was weighed (or corrected) in Spoolman. The difference between what the scale says and what the
   prints on that spool since the last weigh-in were thought to use is spread over those prints in proportion.
 - progress: a failed or cancelled print, counted as the estimate times how far it got.
 - estimate: the slicer's estimate (finished prints with no better source).
 
-Which spools a job used is recorded when it starts (Legacy farm's loaded filament on that printer, linked to
-Spoolman through the spool sync), with the estimate split over them by material and colour.
+Which spools a job used is recorded when it starts (the farm's loaded filament on that printer; the farm's spool
+ids are its Spoolman's), with the estimate split over them by material and colour.
 """
 import logging
 import math
@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..kv import setting, set_setting
-from ..models import FarmJob, SpoolLink, SpoolWeighIn
+from ..models import FarmJob, SpoolWeighIn
 
 log = logging.getLogger("hub.filament_use")
 DONE = ("completed", "failed", "cancelled")
@@ -40,9 +40,17 @@ def _aware(d):
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
+DENSITY = {"PLA": 1.24, "PETG": 1.27, "ABS": 1.04, "ASA": 1.07, "TPU": 1.21, "PC": 1.20, "PA": 1.14, "PVA": 1.23,
+           "HIPS": 1.04, "PET": 1.38}
+
+
 def density(material: str | None) -> float:
-    from .spoolsync import _density
-    return _density(material)
+    """g/cm3 for a material, from its name (PLA when unknown)."""
+    m = (material or "PLA").upper()
+    for k, v in DENSITY.items():
+        if m.startswith(k):
+            return v
+    return 1.24
 
 
 def mm_to_g(mm: float, material: str | None, diameter: float = 1.75, dens: float | None = None) -> float:
@@ -63,7 +71,7 @@ def share(fj: FarmJob) -> float:
 
 
 def plan_from_metadata(md: dict) -> list | None:
-    """The file's filaments: [{type, color, g}] (Legacy farm's parse of the G-code)."""
+    """The file's filaments: [{type, color, g}] (the farm's parse of the G-code)."""
     out = []
     for f in md.get("filaments") or []:
         g = f.get("used_g")
@@ -81,7 +89,7 @@ def plan_from_metadata(md: dict) -> list | None:
 # ---------- printers that report use ----------
 
 def klipper_hosts(db: Session, refresh: bool = False) -> dict:
-    """{printer name: Moonraker URL}. Found from Legacy farm's printer list (Klipper printers, port 7125); the
+    """{printer name: Moonraker URL}. Found from the farm's printer list (Klipper printers, port 7125); the
     `moonraker_urls` setting adds or overrides entries ("" turns one off)."""
     cache = setting(db, "klipper_hosts_cache") or {}
     at = cache.get("at")
@@ -94,7 +102,7 @@ def klipper_hosts(db: Session, refresh: bool = False) -> dict:
             hosts = {p["name"]: f"http://{p['ip_address']}:7125" for p in ps
                      if (p.get("type") == "klipper" or p.get("plugin") == "klipper") and p.get("ip_address") and p.get("name")}
             set_setting(db, "klipper_hosts_cache", {"at": now().isoformat(), "hosts": hosts})
-        except Exception as e:  # noqa: BLE001  (Legacy farm down: keep the last list)
+        except Exception as e:  # noqa: BLE001  (farm down: keep the last list)
             log.info("klipper host discovery failed: %s", e)
     merged = {**hosts, **(setting(db, "moonraker_urls") or {})}
     return {k: v.rstrip("/") for k, v in merged.items() if v}
@@ -206,8 +214,8 @@ def snapshot_spools(db: Session, fj: FarmJob) -> list:
     pid = next((p["id"] for p in ps if p.get("name") == fj.printer_name or p.get("id") == fj.printer_name), None)
     fa = (w.filament_assignments() or {}).get("printers") or {}
     loaded = [a for a in ((fa.get(pid) or {}).get("assignments") or []) if a.get("spool_id")]
-    links = {l.wt_spool_id: l.spoolman_id for l in db.execute(select(SpoolLink)).scalars()}
-    spools = [{"wt": a["spool_id"], "sm": links.get(a["spool_id"]), "type": (a.get("material_type") or "").upper() or None,
+    # the farm's spool ids are its Spoolman's (ArtisanHub Farm keeps the library in Spoolman)
+    spools = [{"farm": a["spool_id"], "sm": a["spool_id"], "type": (a.get("material_type") or "").upper() or None,
                "color": (a.get("spool_color_hex") or a.get("color_hex") or "").lstrip("#").lower() or None, "g": 0.0}
               for a in loaded]
     if not spools:

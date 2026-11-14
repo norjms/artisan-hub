@@ -89,13 +89,12 @@ def test_model_ratio_feeds_profit():
 
 def test_plan_and_snapshot_split(monkeypatch):
     from app.db import session_scope
-    from app.models import SpoolLink
     from app.services import filament_use as fu
     plan = fu.plan_from_metadata({"filaments": [{"type": "PLA", "color": "#FF0000", "used_g": 20},
                                                 {"type": "PLA", "color": "#0000FF", "used_g": 5}]})
     assert plan == [{"type": "PLA", "color": "ff0000", "g": 20.0}, {"type": "PLA", "color": "0000ff", "g": 5.0}]
 
-    class W:
+    class W:   # the farm
         def printers_full(self):
             return {"printers": [{"id": "p1", "name": "H2D"}]}
 
@@ -105,14 +104,10 @@ def test_plan_and_snapshot_split(monkeypatch):
                 {"spool_id": 72, "material_type": "PLA", "spool_color_hex": "#1111EE"},
                 {"spool_id": None, "material_type": "PLA"}]}}}
     import app.clients as clients
-    monkeypatch.setattr(clients, "watchtower", lambda: W())
+    monkeypatch.setattr(clients, "farm", lambda: W())
     with session_scope() as db:
-        link = SpoolLink(spoolman_id=8071, wt_spool_id=71, last_g=500)
-        db.add(link)
-        db.flush()
         fj = _job(db, printer_name="H2D", fil_plan=plan, filament_g=25.0)
         out = fu.snapshot_spools(db, fj)
-        by = {s["wt"]: s for s in out}
-        assert by[71]["g"] == 20.0 and by[71]["sm"] == 8071
-        assert by[72]["g"] == 5.0 and by[72]["sm"] is None
-        db.delete(link)          # leave no links behind for the spool sync tests
+        by = {s["farm"]: s for s in out}
+        assert by[71]["g"] == 20.0 and by[71]["sm"] == 71
+        assert by[72]["g"] == 5.0 and by[72]["sm"] == 72

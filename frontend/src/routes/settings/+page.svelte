@@ -4,13 +4,11 @@
   import { attempt, toast } from '$lib/toast.svelte.js';
   import { page } from '$app/state';
   import { THEMES, REDUCE, look, setLook } from '$lib/theme.svelte.js';
-  import { nav } from '$lib/nav.svelte.js';
   import Page from '$lib/Page.svelte';
   const TABS = [['general', 'General'], ['slicing', 'Slicing and costs'], ['sites', 'Model sites'], ['keys', 'API keys']];
   let tab = $state(TABS.some((t) => t[0] === page.url.searchParams.get('tab')) ? page.url.searchParams.get('tab') : 'general');
   function pick(t) { tab = t; const u = new URL(location.href); u.searchParams.set('tab', t); history.replaceState(history.state, '', u); }
-  // Watchtower by name only where the farm really is Watchtower.
-  const farmName = $derived(nav.farm?.kind === 'watchtower' ? 'Watchtower' : 'the farm');
+  const farmName = 'the farm';
   let s = $state(null);
   let keys = $state([]);
   let conns = $state([]);
@@ -92,8 +90,7 @@
       <section class="ah-glass ah-card">
         <h2 class="ah-card-title">Automation</h2>
         <p class="ah-muted" style="margin-top:-6px">For everyone in this hub. How orders become prints and stock.</p>
-        {@render sw('wt_auto_queue', 'Auto-queue prints', `${farmName === 'Watchtower' ? 'Watchtower starts' : 'The farm starts'} print jobs as soon as a store order for a mapped SKU arrives.`, 'auto queue')}
-        {@render sw('wt_mirror_library', `Store 3MF and G-code files in ${farmName}`, `Every model's 3MF and G-code files are mirrored into ${farmName === 'Watchtower' ? "Watchtower's" : "the farm's"} library under team name, category and model.`, 'mirror')}
+        {@render sw('farm_mirror_library', `Store 3MF and G-code files in ${farmName}`, "Every model's 3MF and G-code files are mirrored into the farm's library under team name, category and model.", 'mirror')}
         {@render sw('consume_parts_on_complete', 'Deduct parts when orders complete', 'Removes per-unit parts from InvenTree stock when WooCommerce marks the order completed. Filament is tracked by Spoolman.', 'consume')}
         {@render sw('hide_on_license_expiry', 'Hide products when a commercial license ends', 'When a membership you sell under passes its end date, its live products are hidden on the store automatically. Off: you get an email and decide.', 'hide on expiry')}
         {@render sw('require_approved_slice', 'Go live only with an approved slice', "A product can't go live on the store until the default printer has an approved print file.", 'require approved slice')}

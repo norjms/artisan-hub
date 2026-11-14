@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     deltaprints_dir: str = ""                   # first team DeltaPrints folder, under source_root; empty = none
     dev_auth_bypass: bool = False                # tests only
     setup_token: str = ""                        # first-run setup token (HUB_SETUP_TOKEN); generated and logged if empty
+    # HUB_FARM_MOVE=openprinthq: an installation set up with a farm the hub no longer supports moves to ArtisanHub
+    # Farm at this start (docs/farm.md, Moving from another farm). Without it such an installation refuses to start.
+    farm_move: str = ""
 
     # Filament identification (mobile control, 2026-10-23). Team settings vision_url / vision_model override these.
     vision_url: str = ""                         # Ollama with a multimodal model; empty = none
@@ -83,13 +86,6 @@ class Settings(BaseSettings):
     manyfold_client_id: str = ""
     manyfold_client_secret: str = ""
     manyfold_library_path: str = ""   # path as Manyfold sees it
-
-    # Watchtower
-    wt_url: str = ""
-    wt_public_url: str = ""
-    wt_api_key: str = ""
-    wt_username: str = ""
-    wt_password: str = ""
 
     # InvenTree
     inventree_url: str = ""

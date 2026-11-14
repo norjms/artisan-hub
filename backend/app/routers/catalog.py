@@ -188,8 +188,7 @@ def delete_check(model_id: int, db: Session = Depends(get_db), _: Principal = De
     return {"blockers": removal.delete_blockers(db, m), "code": m.code,
             "will_remove": {"photos": len(m.images), "files": len(m.files), "woo_draft": bool(p and p.woo_product_id),
                             "dam_photos": sum(1 for i in m.images if i.dam_ref), "dam_collection": bool(m.dam_collection_ref),
-                            "watchtower_files": sum(1 for f in m.files if shop.farm_ref(f)),
-                            "watchtower_mappings": len((p.wt_mapping_ids or {}) if p else {}),
+                            "farm_files": sum(1 for f in m.files if shop.farm_ref(f)),
                             "library_folder": m.library_rel}}
 
 
@@ -379,10 +378,10 @@ def update_file(file_id: int, body: FileIn, db: Session = Depends(get_db), p: Pr
         raise HTTPException(404)
     if body.is_print_file is not None:
         if body.is_print_file and f.kind not in ("3mf_sliced", "gcode"):
-            raise HTTPException(400, "Watchtower needs a sliced .3mf or .gcode file. Slice it and upload the result.")
+            raise HTTPException(400, "The farm needs a sliced .3mf or .gcode file. Slice it and upload the result.")
         f.is_print_file = body.is_print_file
         if f.model.product and f.model.product.woo_product_id:
-            enqueue(db, "watchtower.sync_product", ref=f"product:{f.model.product.id}",
+            enqueue(db, "farm.sync_product", ref=f"product:{f.model.product.id}",
                     payload={"product_id": f.model.product.id}, delay=2)
     db.commit()
     return mfile(f)
@@ -400,7 +399,7 @@ def delete_file(file_id: int, db: Session = Depends(get_db), p: Principal = Depe
     event(db, f"model:{m.id}", f"Deleted file {out['deleted']}" + (f" (used by {', '.join(out['printers'])})" if out["printers"] else ""),
           actor=p.actor)
     if out["was_production"] and m.product and m.product.woo_product_id:
-        enqueue(db, "watchtower.sync_product", ref=f"product:{m.product.id}", payload={"product_id": m.product.id}, delay=2)
+        enqueue(db, "farm.sync_product", ref=f"product:{m.product.id}", payload={"product_id": m.product.id}, delay=2)
     enqueue(db, "manyfold.rescan", ref="manyfold:rescan", delay=30)
     db.commit()
     return out
@@ -440,7 +439,7 @@ async def replace_file(file_id: int, file: UploadFile = File(...), db: Session =
     from ..tasks import _after_approve
     _after_approve(db, m, out)
     if m.product and m.product.woo_product_id:
-        enqueue(db, "watchtower.sync_product", ref=f"product:{m.product.id}", payload={"product_id": m.product.id}, delay=2)
+        enqueue(db, "farm.sync_product", ref=f"product:{m.product.id}", payload={"product_id": m.product.id}, delay=2)
     enqueue(db, "manyfold.rescan", ref="manyfold:rescan", delay=30)
     db.commit()
     return out

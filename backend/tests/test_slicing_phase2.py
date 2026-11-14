@@ -1,5 +1,5 @@
 """Slicing phase 2: automation (auto-slice imports, auto-approve, nightly), store gating, cost per unit,
-real-print records (manual and from Watchtower), the PrusaSlicer to OrcaSlicer preset converter, and settings."""
+real-print records (manual and from the farm), the PrusaSlicer to OrcaSlicer preset converter, and settings."""
 import json
 
 from tests.test_slicing import FakeSlicer, _setup_model
@@ -121,9 +121,9 @@ def test_store_gate_cost_and_prints(env, monkeypatch, tmp_path):
     assert card["prints"]["failed"] == 2 and any(x["code"] == "prints" for x in card["problems"])
     assert c.post(f"/api/slice-results/{rid}/prints", json={"outcome": "bogus"}).status_code == 400
 
-    # from Watchtower: the job name carries the sliced file name
+    # from the farm: the job name carries the sliced file name
     import app.clients as cl
-    monkeypatch.setattr(cl, "watchtower", lambda: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(cl, "farm", lambda: (_ for _ in ()).throw(RuntimeError("offline")))
     with session_scope() as db:
         from app.models import Job
         j = Job(kind="slicing.farm_job", payload={"event": "queue.job_completed",
@@ -137,7 +137,7 @@ def test_store_gate_cost_and_prints(env, monkeypatch, tmp_path):
     card = next(p for p in c.get(f"/api/models/{mid}/slicing").json()["printers"] if p["profile_id"] == pid)
     assert card["prints"]["ok"] == 1 and card["prints"]["verified"]
     assert not any(x["code"] == "prints" for x in card["problems"])
-    assert card["prints"]["recent"][0]["source"] == "watchtower"
+    assert card["prints"]["recent"][0]["source"] == "farm"
 
 
 def test_convert_ini_and_settings(env):

@@ -61,16 +61,16 @@ def _order_consume(db, job):
     return shop.consume_order(db, job.payload["order_id"])
 
 
-@handler("watchtower.sync_product")
-def _wt_sync(db, job):
-    return shop.sync_watchtower_product(db, job.payload["product_id"])
+@handler("farm.sync_product")
+def _farm_sync_product(db, job):
+    return shop.sync_farm_product(db, job.payload["product_id"])
 
 
-@handler("watchtower.mirror_model")
-def _wt_mirror(db, job):
-    if setting_value(db, "wt_mirror_library", True) is False:
+@handler("farm.mirror_model")
+def _farm_mirror(db, job):
+    if setting_value(db, "farm_mirror_library", True) is False:
         return {"skipped": "disabled"}
-    return shop.mirror_model_to_watchtower(db, job.payload["model_id"])
+    return shop.mirror_model_to_farm(db, job.payload["model_id"])
 
 
 def setting_value(db, key, default=None):
@@ -130,8 +130,8 @@ def _import_folder(db, job):
     _sl.after_import(db, m)
     enqueue(db, "dam.sync_model", ref=f"model:{m.id}:dam", payload={"model_id": m.id}, delay=2)
     enqueue(db, "manyfold.rescan", ref="manyfold:rescan", delay=120)
-    if any(f.kind in shop.WT_KINDS and not shop.farm_ref(f) for f in m.files):
-        enqueue(db, "watchtower.mirror_model", ref=f"model:{m.id}:wt", payload={"model_id": m.id}, delay=30, priority=9)
+    if any(f.kind in shop.FARM_FILE_KINDS and not shop.farm_ref(f) for f in m.files):
+        enqueue(db, "farm.mirror_model", ref=f"model:{m.id}:farm", payload={"model_id": m.id}, delay=30, priority=9)
     return {"model_id": m.id, "code": m.code, "images": len(m.images), "files": len(m.files)}
 
 
@@ -273,55 +273,6 @@ def _setup(db, job):
     return setup.run(db)
 
 
-@handler("spoolman.import_watchtower")
-def _sm_import(db, job):
-    """Seed Spoolman with spools Watchtower already tracks (idempotent, keyed by Watchtower spool id)."""
-    from .clients import farm, spoolman
-    sm = spoolman()
-    done = dict((setting_row(db, "wt_spool_import") or Setting(value={})).value or {})
-    wt = farm().spools()
-    spools = wt.get("spools", wt) if isinstance(wt, dict) else wt
-    vendors = {v["name"].lower(): v["id"] for v in sm.vendors()}
-    fils = {(f.get("vendor", {}).get("name", "").lower(), f.get("material", ""), (f.get("color_hex") or "").lower(),
-             f.get("name", "")): f["id"] for f in sm.filaments()}
-    created = 0
-    for w in spools:
-        key = str(w["id"])
-        if key in done:
-            continue
-        vname = w.get("manufacturer") or "Unknown"
-        vid = vendors.get(vname.lower())
-        if not vid:
-            vid = sm.post("/vendor", json={"name": vname})["id"]
-            vendors[vname.lower()] = vid
-        hexv = (w.get("color_hex") or "").lstrip("#").lower() or None
-        fname = " ".join(x for x in [w.get("color"), w.get("variant")] if x) or w.get("material_type") or "Filament"
-        fk = (vname.lower(), w.get("material_type") or "PLA", hexv or "", fname)
-        fid = fils.get(fk)
-        if not fid:
-            body = {"name": fname, "vendor_id": vid, "material": w.get("material_type") or "PLA",
-                    "density": w.get("density") or 1.24, "diameter": w.get("diameter") or 1.75,
-                    "weight": w.get("initial_weight") or 1000}
-            if hexv:
-                body["color_hex"] = hexv
-            if w.get("cost"):
-                body["price"] = w["cost"]
-            fid = sm.post("/filament", json=body)["id"]
-            fils[fk] = fid
-        sp = sm.post("/spool", json={"filament_id": fid, "remaining_weight": w.get("remaining_weight") or 0,
-                                     "location": w.get("location") or None,
-                                     "comment": f"Imported from Watchtower spool #{w['id']} by Artisan Hub"})
-        done[key] = sp["id"]
-        created += 1
-    row = setting_row(db, "wt_spool_import")
-    if row:
-        row.value = done
-    else:
-        db.add(Setting(key="wt_spool_import", value=done))
-    enqueue(db, "inventory.refresh_spools", ref="refresh:spools", delay=1)
-    return {"created": created, "total_mapped": len(done)}
-
-
 @handler("farm.plate_scan")
 def _farm_plate_scan(db, job):
     """Pending farm jobs held only by the plate on an idle printer: reslice for that plate (services/plate_reslice)."""
@@ -418,8 +369,8 @@ def _mw_import(db, job):
     _sl.after_import(db, m)
     if m.files and m.product and not sum(b.grams or 0 for b in m.product.filaments):
         enqueue(db, "model.estimate_filament", ref=f"model:{m.id}:estimate", payload={"model_id": m.id}, delay=5)
-    if any(f.kind in shop.WT_KINDS and not shop.farm_ref(f) for f in m.files):
-        enqueue(db, "watchtower.mirror_model", ref=f"model:{m.id}:wt", payload={"model_id": m.id}, delay=30, priority=9)
+    if any(f.kind in shop.FARM_FILE_KINDS and not shop.farm_ref(f) for f in m.files):
+        enqueue(db, "farm.mirror_model", ref=f"model:{m.id}:farm", payload={"model_id": m.id}, delay=30, priority=9)
     return {**report, "model_id": m.id, "product_id": m.product.id if m.product else None}
 
 
@@ -436,7 +387,7 @@ def _purge(db, job):
 
 def after_new_files(db, m):
     """Files were added to a model outside an import (the browser add-on's Send files): library rescan, slicing,
-    filament estimate and the Watchtower mirror, as an import does."""
+    filament estimate and the farm library copy, as an import does."""
     if not m.files:
         return
     enqueue(db, "manyfold.rescan", ref="manyfold:rescan", delay=120)
@@ -444,8 +395,8 @@ def after_new_files(db, m):
     _sl.after_import(db, m)
     if m.product and not sum(b.grams or 0 for b in m.product.filaments):
         enqueue(db, "model.estimate_filament", ref=f"model:{m.id}:estimate", payload={"model_id": m.id}, delay=5)
-    if any(f.kind in shop.WT_KINDS and not shop.farm_ref(f) for f in m.files):
-        enqueue(db, "watchtower.mirror_model", ref=f"model:{m.id}:wt", payload={"model_id": m.id}, delay=30, priority=9)
+    if any(f.kind in shop.FARM_FILE_KINDS and not shop.farm_ref(f) for f in m.files):
+        enqueue(db, "farm.mirror_model", ref=f"model:{m.id}:farm", payload={"model_id": m.id}, delay=30, priority=9)
 
 
 @handler("source.import")
@@ -479,8 +430,8 @@ def _src_import(db, job):
     _sl.after_import(db, m)
     if m.files and m.product and not sum(b.grams or 0 for b in m.product.filaments):
         enqueue(db, "model.estimate_filament", ref=f"model:{m.id}:estimate", payload={"model_id": m.id}, delay=5)
-    if any(f.kind in shop.WT_KINDS and not shop.farm_ref(f) for f in m.files):
-        enqueue(db, "watchtower.mirror_model", ref=f"model:{m.id}:wt", payload={"model_id": m.id}, delay=30, priority=9)
+    if any(f.kind in shop.FARM_FILE_KINDS and not shop.farm_ref(f) for f in m.files):
+        enqueue(db, "farm.mirror_model", ref=f"model:{m.id}:farm", payload={"model_id": m.id}, delay=30, priority=9)
     return {**{k: v for k, v in report.items() if k != "filament"}, "model_id": m.id,
             "product_id": m.product.id if m.product else None}
 
@@ -535,12 +486,12 @@ def _slice(db, job):
 
 
 def _after_approve(db, m, r):
-    """Approved files go where the printer's dispatch says (pluggable; Watchtower is one option)."""
+    """Approved files go where the printer's dispatch says (none, or the farm)."""
     if r.get("production") and m.product:
         from .clients import farm_connected
         if farm_connected():
-            enqueue(db, "watchtower.mirror_model", ref=f"model:{m.id}:wt", payload={"model_id": m.id}, delay=10, priority=9)
-            enqueue(db, "watchtower.sync_product", ref=f"product:{m.product.id}:wt", payload={"product_id": m.product.id}, delay=60)
+            enqueue(db, "farm.mirror_model", ref=f"model:{m.id}:farm", payload={"model_id": m.id}, delay=10, priority=9)
+            enqueue(db, "farm.sync_product", ref=f"product:{m.product.id}:farm", payload={"product_id": m.product.id}, delay=60)
 
 
 @handler("slice.inspect")
@@ -594,7 +545,7 @@ def _farm_job(db, job):
         return {"skipped": "not a finished job"}
     data = d.get("data") or {}
     jid = data.get("job_id")
-    source = data.get("source") or "watchtower"
+    source = data.get("source") or "farm"
     info = {}
     if jid:
         try:
@@ -757,17 +708,6 @@ def _quote_refuse(db, job):
 def _quotes_expire(db, job):
     from .services import quotes
     return quotes.expire(db)
-
-
-@handler("spools.sync")
-def _spools_sync(db, job):
-    """Two-way spool sync: Watchtower's use into Spoolman, Spoolman's weights into Watchtower, new spools both ways."""
-    from .services import spoolsync
-    if setting_value(db, "spool_sync", True) is False:
-        return {"skipped": "turned off"}
-    out = spoolsync.sync(db, dry_run=bool((job.payload or {}).get("dry_run")))
-    enqueue(db, "inventory.refresh_spools", ref="refresh:spools", delay=1)
-    return {k: (len(v) if isinstance(v, list) else v) for k, v in out.items()}
 
 
 @handler("slicing.check_stale")
@@ -965,7 +905,7 @@ def _has_maint(team):
 
 
 def _farm(team):
-    """The team runs a print farm the hub has a driver for (Watchtower or OpenPrintHQ)."""
+    """The team has ArtisanHub Farm connected."""
     from .clients import farm_connected
     return farm_connected(team.id)
 
@@ -980,14 +920,6 @@ def _spool_library(team):
     from .services.connections import is_connected
     from .services.spool_library import farm_library
     return is_connected("spoolman", team.id) or farm_library(team.id)
-
-
-def _spools_both(team):
-    """Spoolman and a farm that keeps its own spool list (Watchtower). OpenPrintHQ as the farm has none to sync:
-    the hub reads Spoolman directly, and OpenPrintHQ's tenants already use Spoolman themselves."""
-    from .services.connections import is_connected
-    from .clients import farm_kind
-    return is_connected("spoolman", team.id) and is_connected("watchtower", team.id) and farm_kind(team.id) == "watchtower"
 
 
 def _has_dir(key):
@@ -1046,7 +978,6 @@ every("license.grants_check", 6 * 3600, needs=_has_models)
 every("slicing.check_stale", 6 * 3600, needs=_has_slices)
 every("slicing.nightly", 1800, needs=_has_slices)
 every("farm.sync", 120, needs=_farm)
-every("spools.sync", 300, needs=_spools_both)
 every("farm.sync_locations", 300, needs=_ophq_farm)
 every("farm.plate_scan", 60, needs=_ophq_farm)
 every("maint.check", 3600, needs=_has_maint)

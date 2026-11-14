@@ -33,7 +33,7 @@ def test_timeline_orders_and_prioritise(env, monkeypatch):
         ])
         o = Order(woo_order_id=7001, number="7001", status="processing", placed_at=t0 - timedelta(days=3, hours=1),
                   routed_at=t0)
-        o.lines.append(OrderLine(sku="X", qty=1, wt_job_ids=["t6"]))
+        o.lines.append(OrderLine(sku="X", qty=1, farm_job_ids=["t6"]))
         db.add(o)
         db.flush()
         tl = schedule.build(db, printers=printers, at=t0)
@@ -106,7 +106,7 @@ def test_maintenance_plans_alarms_and_parts(env, monkeypatch):
     assert c.post(f"/api/maintenance/tasks/{t['id']}/done", json={}).status_code == 400
 
 
-def test_maintenance_linked_with_watchtower(env, monkeypatch):
+def test_maintenance_linked_with_the_farm(env, monkeypatch):
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db import session_scope
@@ -139,38 +139,38 @@ def test_maintenance_linked_with_watchtower(env, monkeypatch):
             calls.append(("down", printer, down))
             self.down = [printer] if down else []
     w = W()
-    monkeypatch.setattr(maintenance, "_wt", lambda: w)
-    monkeypatch.setattr(maintenance, "_wt_on", lambda: True)
+    monkeypatch.setattr(maintenance, "_farm", lambda: w)
+    monkeypatch.setattr(maintenance, "_farm_on", lambda: True)
     monkeypatch.setattr(inventory, "inventree", lambda: type("I", (), {"stock": lambda self, part, in_stock: [{"pk": 1, "quantity": 9}],
                                                                       "remove_stock": lambda self, b, n: None})())
     c = TestClient(app)
     out = c.post("/api/maintenance/sync").json()
-    assert out["watchtower"]["added"] == 2 and len(out["opened"]) == 1          # the overdue one opens a task
+    assert out["farm"]["added"] == 2 and len(out["opened"]) == 1          # the overdue one opens a task
     with session_scope() as db:
-        bed = db.query(MaintPlan).filter_by(wt_schedule_id=91).one()
-        belts = db.query(MaintPlan).filter_by(wt_schedule_id=92).one()
+        bed = db.query(MaintPlan).filter_by(farm_schedule_id=91).one()
+        belts = db.query(MaintPlan).filter_by(farm_schedule_id=92).one()
         assert maintenance.plan_status(db, bed)["hours_since"] == 61.0
         assert maintenance.plan_status(db, belts)["due"] is False
         tid = db.query(MaintTask).filter_by(plan_id=bed.id).one().id
         bid, beltid = bed.id, belts.id
-    # the hub keeps parts on a linked plan, but its interval stays Watchtower's; it can't be removed here
+    # the hub keeps parts on a linked plan, but its interval stays the farm's; it can't be removed here
     r = c.put(f"/api/maintenance/plans/{bid}", json={"printer": "MK4S", "title": "x", "every_hours": 5,
                                                       "parts": [{"part_id": 3, "qty": 1, "name": "IPA"}], "active": True})
-    assert r.json()["every_hours"] == 50.0 and r.json()["parts"][0]["name"] == "IPA" and r.json()["watchtower"]
+    assert r.json()["every_hours"] == 50.0 and r.json()["parts"][0]["name"] == "IPA" and r.json()["linked"]
     assert c.delete(f"/api/maintenance/plans/{bid}").status_code == 400
-    # out of service, then done: Watchtower schedule completed and the printer comes back
+    # out of service, then done: the farm's schedule completed and the printer comes back
     assert c.post(f"/api/maintenance/tasks/{tid}/service", json={"out_of_service": True}).json()["out_of_service"]
     with session_scope() as db:
         lanes = schedule.build(db, printers=[{"name": "MK4S", "online": True, "busy": False, "ready": True}])["lanes"]
         assert next(l for l in lanes if l["printer"] == "MK4S")["down"]
     r = c.post(f"/api/maintenance/tasks/{tid}/done", json={"notes": "wiped"}).json()
-    assert r["wt_note"] == "Completed in Watchtower" and not r["out_of_service"]
+    assert r["farm_note"] == "Completed in the farm" and not r["out_of_service"]
     assert ("complete", 91, "test") in [(a, b, "test") for (a, b, *_) in calls if a == "complete"] and ("down", "MK4S", False) in calls
-    # a hand-made task is logged in Watchtower's maintenance log
+    # a hand-made task is logged in the farm's maintenance log
     t = c.post("/api/maintenance/tasks", json={"printer": "MK4S", "title": "Replace PTFE tube"}).json()
-    assert c.post(f"/api/maintenance/tasks/{t['id']}/done", json={}).json()["wt_note"] == "Logged in Watchtower"
+    assert c.post(f"/api/maintenance/tasks/{t['id']}/done", json={}).json()["farm_note"] == "Logged in the farm"
     assert ("log", "MK4S", "Replace PTFE tube", "inspection") in calls
-    # completed in Watchtower: the hub's open task closes, without taking parts
+    # completed in the farm: the hub's open task closes, without taking parts
     with session_scope() as db:
         t2 = MaintTask(printer_name="MK4S", title="Check belt tension", source="plan", plan_id=beltid)
         db.add(t2)
@@ -181,4 +181,4 @@ def test_maintenance_linked_with_watchtower(env, monkeypatch):
     c.post("/api/maintenance/sync")
     with session_scope() as db:
         t2 = db.get(MaintTask, t2id)
-        assert t2.state == "done" and t2.done_by == "james" and "not taken" in t2.wt_note
+        assert t2.state == "done" and t2.done_by == "james" and "not taken" in t2.farm_note

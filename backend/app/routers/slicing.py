@@ -24,7 +24,7 @@ def prof_dict(p: PrinterProfile) -> dict:
             "tools": p.tools or [], "filament_presets": p.filament_presets or {},
             "machine_overrides": p.machine_overrides or {}, "process_overrides": p.process_overrides or {},
             "use_model_settings": p.use_model_settings, "active": p.active, "is_default": p.is_default,
-            "dispatch": p.dispatch or "none", "wt_printer": p.wt_printer, "hourly_rate": p.hourly_rate, "bed_type": p.bed_type, "filament_slots": p.filament_slots, "notes": p.notes}
+            "dispatch": p.dispatch or "none", "farm_printer": p.farm_printer, "hourly_rate": p.hourly_rate, "bed_type": p.bed_type, "filament_slots": p.filament_slots, "notes": p.notes}
 
 
 def result_dict(r: SliceResult | None, prof: PrinterProfile, model: Model, db: Session | None = None) -> dict:
@@ -124,7 +124,7 @@ class ProfileIn(BaseModel):
     active: bool | None = None
     is_default: bool | None = None
     dispatch: str | None = None
-    wt_printer: str | None = None
+    farm_printer: str | None = None
     hourly_rate: float | None = None
     bed_type: str | None = None
     filament_slots: int | None = None
@@ -159,8 +159,8 @@ def _apply(db, p: PrinterProfile, body: ProfileIn):
         data["bed_type"] = None
     if data.get("bed_type") and data["bed_type"] not in slicing.BED_TYPES:
         raise HTTPException(400, f"build plate must be one of {', '.join(slicing.BED_TYPES)}")
-    if "dispatch" in data and data["dispatch"] not in ("none", "watchtower"):
-        raise HTTPException(400, "dispatch must be none or watchtower")
+    if "dispatch" in data and data["dispatch"] not in ("none", "farm"):
+        raise HTTPException(400, "dispatch must be none or farm")
     if "tools" in data:
         try:
             data["tools"] = slicing.clean_tools(data["tools"])
@@ -429,7 +429,7 @@ def remove_result(rid: int, db: Session = Depends(get_db), p: Principal = Depend
     out = slicing.remove_result(db, r)
     event(db, f"model:{m.id}", f"Removed the slice for {out['printer']}", actor=p.actor)
     if out.get("production_cleared") and m.product and m.product.woo_product_id:
-        enqueue(db, "watchtower.sync_product", ref=f"product:{m.product.id}", payload={"product_id": m.product.id}, delay=2)
+        enqueue(db, "farm.sync_product", ref=f"product:{m.product.id}", payload={"product_id": m.product.id}, delay=2)
     db.commit()
     return out
 

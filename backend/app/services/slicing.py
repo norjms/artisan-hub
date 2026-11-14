@@ -141,8 +141,7 @@ def ensure_tools(prof: PrinterProfile) -> list[dict]:
 
 
 def discover_printers() -> list[dict]:
-    """Printers a team's print farm software reports (Watchtower), as hints for the setup wizard.
-    Teams without one simply get an empty list."""
+    """Printers ArtisanHub Farm reports, as hints for the setup wizard. Without the farm, an empty list."""
     from ..services.connections import is_connected
     from ..clients import farm, farm_connected
     if not farm_connected():
@@ -151,10 +150,10 @@ def discover_printers() -> list[dict]:
     try:
         for p in farm().printers_full() or []:
             cap = p.get("capabilities") or {}
-            out.append({"source": "watchtower", "name": p.get("name"), "model": p.get("model"),
+            out.append({"source": "farm", "name": p.get("name"), "model": p.get("model"),
                         "nozzle": cap.get("nozzle_size"), "tools": cap.get("tool_count") or cap.get("extruders")})
     except Exception as e:  # noqa: BLE001
-        log.info("watchtower discovery failed: %s", e)
+        log.info("farm printer discovery failed: %s", e)
     return out
 
 
@@ -577,7 +576,7 @@ def _retire(db: Session, model: Model, ids: list[int], owner=None, force: bool =
                 from ..clients import farm
                 farm().delete_library_file(farm_ref(f))
             except Exception:  # noqa: BLE001
-                log.warning("could not remove %s from Watchtower", f.filename)
+                log.warning("could not remove %s from the farm", f.filename)
         model.files.remove(f)
     db.flush()
 
@@ -836,7 +835,7 @@ def sliced_for(f: ModelFile, prof: PrinterProfile) -> bool | None:
     a = _norm(f.printer)
     if not a:
         return None
-    names = {_norm(prof.name), _norm(prof.wt_printer), _norm(prof.machine_preset)} - {""}
+    names = {_norm(prof.name), _norm(prof.farm_printer), _norm(prof.machine_preset)} - {""}
     return any(a == n or f" {a} " in f" {n} " or f" {n} " in f" {a} " for n in names)
 
 
@@ -1417,18 +1416,18 @@ def nightly(db: Session, force: bool = False) -> dict:
 
 
 def sync_printer_slots(db: Session) -> dict:
-    """Filament slots per printer from Watchtower: every AMS, AMS HT, external spool or tool slot it has reported."""
+    """Filament slots per printer from the farm: every AMS, AMS HT, external spool or tool slot it has reported."""
     from .. import clients
     try:
-        wt = clients.farm()
-        printers = wt.printers_full() or []
-        assigned = (wt.filament_assignments() or {}).get("printers") or {}
+        fc = clients.farm()
+        printers = fc.printers_full() or []
+        assigned = (fc.filament_assignments() or {}).get("printers") or {}
     except Exception as e:  # noqa: BLE001
-        return {"skipped": f"Watchtower not reachable: {str(e)[:120]}"}
+        return {"skipped": f"The farm is not reachable: {str(e)[:120]}"}
     by_name = {p.get("name"): p for p in printers if isinstance(p, dict)}
     changed = {}
     for prof in db.execute(select(PrinterProfile)).scalars():
-        p = by_name.get(prof.wt_printer or prof.name)
+        p = by_name.get(prof.farm_printer or prof.name)
         if not p:
             continue
         slots = {(a.get("slot_type"), a.get("system_index"), a.get("slot_index"), a.get("extruder_id"))

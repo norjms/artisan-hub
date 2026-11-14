@@ -263,7 +263,7 @@
             {#each p.prints.recent.slice(0, 4) as x}
               <div class="text-xs mt-1 {x.current ? '' : 'muted'}">
                 <span class="chip {x.outcome === 'ok' ? 'ok' : x.outcome === 'failed' ? 'bad' : ''}">{x.outcome}</span>
-                {ago(x.at)}{x.printer ? ` on ${x.printer}` : ''}{x.duration_s ? `, ${fmtTime(x.duration_s)}` : ''}{x.source === 'watchtower' ? ' (Watchtower)' : x.by ? ` (${x.by})` : ''}{x.note ? `: ${x.note}` : ''}{x.current ? '' : ' · older version'}
+                {ago(x.at)}{x.printer ? ` on ${x.printer}` : ''}{x.duration_s ? `, ${fmtTime(x.duration_s)}` : ''}{x.source === 'farm' ? ' (the farm)' : x.by ? ` (${x.by})` : ''}{x.note ? `: ${x.note}` : ''}{x.current ? '' : ' · older version'}
                 {#if can('slice') && x.source === 'manual'}<button class="underline muted ml-1" onclick={() => unrecord(x)}>remove</button>{/if}
               </div>
             {/each}

@@ -52,7 +52,7 @@ def farm(monkeypatch):
     f = FakeFarm()
     monkeypatch.setattr(clients, "farm", lambda: f)
     monkeypatch.setattr(clients, "farm_kind", lambda team_id=None: "openprinthq")
-    monkeypatch.setattr(mobile, "_wt", lambda: f)
+    monkeypatch.setattr(mobile, "_farm", lambda: f)
     printer_access._cache.update(at=0.0, printers=[])
     yield f
     printer_access._cache.update(at=0.0, printers=[])
@@ -145,11 +145,15 @@ def test_a_change_queues_the_push(farm, people, real_auth):
         assert db.execute(select(Job).where(Job.kind == "farm.push_printer_access", Job.state == "queued")).first()
 
 
-def test_watchtower_is_not_pushed(farm, people, monkeypatch):
+def test_nothing_is_pushed_before_a_farm_is_chosen(farm, people, monkeypatch):
     from app import clients
     from app.db import session_scope
     from app.services import printer_access
+    from app.services.installation import FarmNotChosen
     from app.tenant import use_team
-    monkeypatch.setattr(clients, "farm_kind", lambda team_id=None: "watchtower")
+
+    def none(team_id=None):
+        raise FarmNotChosen()
+    monkeypatch.setattr(clients, "farm_kind", none)
     with session_scope() as db, use_team(1):
-        assert printer_access.push(db, 1) == {"skipped": "the farm is not ArtisanHub Farm"}
+        assert printer_access.push(db, 1) == {"skipped": "no farm chosen"}

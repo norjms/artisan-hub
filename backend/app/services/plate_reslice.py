@@ -44,7 +44,7 @@ def profile_for(db: Session, printer_name: str) -> PrinterProfile | None:
     "voron01"."""
     want = (printer_name or "").strip().lower()
     for p in db.execute(select(PrinterProfile).where(PrinterProfile.active.is_(True))).scalars():
-        if (p.wt_printer or p.name or "").strip().lower() == want:
+        if (p.farm_printer or p.name or "").strip().lower() == want:
             return p
     return None
 
@@ -92,7 +92,7 @@ def pick_file(db: Session, fj: FarmJob, ps: PlateSlice) -> ModelFile | None:
     idx = 0
     if len(ids) > 1 and fj.file_ref:
         orig = db.execute(select(ModelFile).where(ModelFile.model_id == fj.model_id,
-                                                  ModelFile.watchtower_uuid == str(fj.file_ref))).scalar()
+                                                  ModelFile.farm_file_ref == str(fj.file_ref))).scalar()
         plate_of = ((orig.settings or {}).get("plate_of") if orig else None) or None
         if not plate_of:
             return None
@@ -183,9 +183,9 @@ def consider(db: Session, c, fj: FarmJob) -> str:
 
 
 def scan(db: Session, limit: int = 20) -> dict:
-    from ..clients import farm, farm_kind
-    if farm_kind() != "openprinthq":
-        return {"skipped": "plate reslicing needs ArtisanHub Farm as the farm"}
+    from ..clients import farm, farm_connected
+    if not farm_connected():
+        return {"skipped": "the farm is not connected"}
     c = farm()
     out: dict[str, int] = {}
     jobs = db.execute(select(FarmJob).where(FarmJob.status.in_(PENDING), FarmJob.model_id.is_not(None))

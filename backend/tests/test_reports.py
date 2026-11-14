@@ -33,7 +33,7 @@ def test_farm_and_profit_reports(env, monkeypatch):
     # r5 cancelled with no progress but it ran 2 h: counts as failed (its share from run time = 1)
     assert t["jobs"] == 5 and t["ok"] == 2 and t["failed"] == 3
     reasons = {x["reason"]: x["count"] for x in r["reasons"]}
-    assert reasons["Lifted or warped"] == 1 and reasons["Failed in Watchtower: spaghetti"] == 1
+    assert reasons["Lifted or warped"] == 1 and reasons["Failed in the farm: spaghetti"] == 1
     h2d = next(p for p in r["printers"] if p["printer"] == "H2D")
     assert h2d["jobs"] == 3 and h2d["ok"] == 2 and h2d["waste_g"] == 50.0       # half of the failed job's 100 g
     assert r["models"][0]["code"] == "RP-1" and r["models"][0]["failed"] == 3

@@ -170,7 +170,7 @@ def installed(db: Session, prof: PrinterProfile) -> BuildPlate | None:
 
 
 def farm_printer_name(prof: PrinterProfile) -> str:
-    return prof.wt_printer or prof.name
+    return prof.farm_printer or prof.name
 
 
 def is_bambu(prof: PrinterProfile) -> bool:

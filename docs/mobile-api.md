@@ -1,7 +1,7 @@
 # Artisan Hub mobile API (v1)
 
 One API for phone apps. The hub is the relay: the phone only ever talks to the hub, and the hub talks to
-Watchtower, Spoolman, InvenTree, WooCommerce, Manyfold, the DAM and the Klipper printers with the team's stored
+ArtisanHub Farm, Spoolman, InvenTree, WooCommerce, Manyfold, the DAM and the Klipper printers with the team's stored
 credentials. The phone never holds those credentials.
 
 - Base URL: `https://<hub>/api/mobile/v1`, for example `https://hub.example.com/api/mobile/v1`
@@ -66,7 +66,7 @@ Each printer in `GET /printers` and `GET /printers/{name}` may carry `commands`,
 supports. OpenPrintHQ engines from 2026-11-07 send it from the engine's `controls`: a PrusaLink printer (Prusa
 MK4, MK4S, MINI, XL) has `set_ready`, `clear_ready`, `pause`, `resume`, `cancel` and `stop` only, because PrusaLink
 cannot home, set temperatures or run G-code over the network; the chamber light is offered on Bambu and Klipper
-printers only. A printer without `commands` (Watchtower, older engines) takes every command. Hide the buttons a
+printers only. A printer without `commands` (older engines) takes every command. Hide the buttons a
 printer does not list; a command it does not list answers 502 with "<printer> cannot <command> over the network".
 
 These run the same hub logic as the web app, so permissions, staggered start, reprints and the event log behave
@@ -74,15 +74,13 @@ the same way.
 
 ## Which farm
 
-The hub runs one print farm per team: Watchtower or OpenPrintHQ (Settings, Connected services; with both connected,
-OpenPrintHQ's `use_as_farm` picks it). `GET /me` answers `farm`: `{"kind": "watchtower" | "openprinthq", "label",
-"capabilities": [...], "connected"}`. The curated endpoints work the same on both; show a feature only when its
-capability is listed (`commands`, `snapshot`, `priority`, `sku_mapping`, `maintenance`, ...). A call the farm cannot do
-answers 502 with "not supported by this farm".
+The print farm is ArtisanHub Farm (OpenPrintHQ), connected under Settings, Connected services. `GET /me` answers
+`farm`: `{"kind": "openprinthq", "label", "capabilities": [...], "connected"}`. Show a feature only when its
+capability is listed (`commands`, `snapshot`, `priority`, `maintenance`, ...), since an older engine may not have
+every one yet. A call the farm cannot do answers 502 with "not supported by this farm".
 
-OpenPrintHQ lists `out_of_service` and `maintenance_log` only when its engine has them (engines from the
-Watchtower-parity release on). The driver asks the engine once and keeps the answer for ten minutes, so the app
-sees them appear within that time of an engine upgrade. Priority uses Watchtower's scale on both farms:
+The farm lists `out_of_service` and `maintenance_log` only when its engine has them. The driver asks the engine once and keeps the answer for ten minutes, so the app
+sees them appear within that time of an engine upgrade. Priority:
 25 low, 50 normal, 75 high, 100 urgent; on an older OpenPrintHQ engine only 75 and up has an effect (front of the
 queue).
 
@@ -112,7 +110,7 @@ How a plate hold is handled (`services/plate_reslice.py`, every minute, task `fa
 5. Just before the swap the printer is checked again; if it was taken, the slice stays cached and the job waits.
 
 The farm job's `plate_reslice` holds the state: `slicing`, `swapped`, `review`, `waiting_printer`, `unsuitable`,
-`no_source` or `failed`, with a message. Watchtower teams are unaffected.
+`no_source` or `failed`, with a message.
 
 ## Plates, service, Print now and orders (app parity, 2026-10-25)
 
@@ -156,7 +154,7 @@ Everything the Start screen tiles show, in one call, cheap enough for background
 (waiting count and the latest one with its photo path), `queue` (counts by status), `orders` (open and the next due),
 `filament` (spools under `?spool_low_g=`, default 150 g, and the three lowest), `parts` (below minimum), `quotes`
 (waiting), `store` (products live), `maintenance` (open, due, printers down) and `activity` (latest event).
-A part that fails (for example Watchtower down) is left out and named in `errors`; the rest still answers.
+A part that fails (for example the farm down) is left out and named in `errors`; the rest still answers.
 
 ### Connecting a phone by QR code
 
@@ -215,8 +213,6 @@ GET|POST|PUT|PATCH|DELETE /relay/{app}/{path}
 
 | app | `{path}` is relative to |
 |---|---|
-| `watchtower` | Watchtower `/api/public/v1/` |
-| `watchtower-web` | Watchtower `/api/` (the hub's signed-in session) |
 | `openprinthq` | OpenPrintHQ engine `/api/v1/`, through its control plane with the team's API key |
 | `spoolman` | Spoolman `/api/` (so `v1/spool`) |
 | `inventree` | InvenTree `/api/` (so `part/`) |
@@ -237,10 +233,10 @@ The phone runs spools, locations, labels, printer hardware and the store through
 
 ### One spool library
 
-When the team's farm is OpenPrintHQ, the farm keeps the filament library: the engine tenant's Spoolman, reached
-through the engine's `/spoolman/inventory/*` routes. Every spool read and write goes there and the hub's spool cache
-is filled from it. With Watchtower (or no farm) the hub's own Spoolman connection stays the library; spools still
-get codes, but locations with codes, slot assignments and moves by code need OpenPrintHQ (400 otherwise).
+When the farm is connected, it keeps the filament library: the engine tenant's Spoolman, reached through the
+engine's `/spoolman/inventory/*` routes. Every spool read and write goes there and the hub's spool cache is filled
+from it. Until the farm is connected the hub's own Spoolman connection stays the library; spools still get codes,
+but locations with codes, slot assignments and moves by code need the farm (400 otherwise).
 `GET /spools` answers `source: "farm" | "spoolman"`.
 
 Moving the hub's Spoolman into the farm library is the job `spools.migrate_to_farm` (web: `POST

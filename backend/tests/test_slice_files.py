@@ -1,5 +1,5 @@
 """Sliced files chosen by hand: promote a file to a printer (approved and locked), lock and unlock, remove a
-printer's slice, delete and replace files, and Print on one printer through Watchtower."""
+printer's slice, delete and replace files, and Print on one printer through the farm."""
 import io
 import json
 import zipfile
@@ -65,7 +65,7 @@ def _prof(c, name, default=False):
     with session_scope() as db:
         pid = db.execute(select(PrinterProfile.id).where(PrinterProfile.name == name)).scalar()
     if not pid:
-        pid = c.post("/api/printer-profiles", json={"name": name, "engine": "orca", "wt_printer": name,
+        pid = c.post("/api/printer-profiles", json={"name": name, "engine": "orca", "farm_printer": name,
                                                     "machine_preset": "Bambu Lab H2D 0.4 nozzle"}).json()["id"]
     if default:
         with session_scope() as db:
@@ -213,26 +213,3 @@ def test_print_on_a_chosen_file_with_start_now(rig, monkeypatch):
     r = c.post(f"/api/models/{mid}/print", json={"profile_id": pid, "quantity": 1, "start_now": True})
     assert r.status_code == 200, r.text
     assert seen[-1] == ("SF Print", True) and r.json()["started"]
-
-
-def test_watchtower_pins_with_print_now(monkeypatch):
-    from app.clients.watchtower_api import WatchtowerClient
-    w = WatchtowerClient("http://wt.test", "k", "u", "p")
-    calls = []
-    monkeypatch.setattr(w, "_pub", lambda method, path, **kw: calls.append(("pub", path, kw.get("json"))) or {"job_ids": [7, 8]})
-    monkeypatch.setattr(w, "_priv", lambda method, path, **kw: calls.append(("priv", path, kw.get("json"))) or {})
-    assert w.has("pin_printer")
-    out = w.submit_job(file_ref="f1", quantity=2, job_name="x", printer="H2D", start=True)
-    assert calls[0] == ("pub", "/jobs", {"quantity": 2, "file_ref": "f1", "job_name": "x", "preferred_printer": "H2D", "priority": 100})
-    assert calls[1] == ("priv", "/api/queue/job/7/print-now", {"printer_name": "H2D", "set_ready": True})
-    assert out["started"] == [7] and out["job_ids"] == [7, 8]
-
-    def busy(*a, **kw):
-        raise RuntimeError("printer busy")
-    monkeypatch.setattr(w, "_priv", busy)
-    out = w.submit_job(file_ref="f1", printer="H2D")
-    assert out["started"] == [] and "queued at the top" in out["notes"][0]
-    calls.clear()
-    monkeypatch.setattr(w, "_priv", lambda *a, **kw: calls.append("priv"))
-    w.submit_job(file_ref="f1", quantity=1)               # no printer: no pin, no print-now
-    assert "priv" not in calls and "preferred_printer" not in calls[0][2]

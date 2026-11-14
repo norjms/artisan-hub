@@ -8,7 +8,7 @@
   let { prof } = $props();
   let live = $state(null);
   let open = $state(false);
-  const farmName = $derived(prof.wt_printer || prof.name);
+  const farmName = $derived(prof.farm_printer || prof.name);
   onMount(async () => {
     live = await api.get(`/api/mobile/v1/printers/${encodeURIComponent(farmName)}/nozzles`).catch(() => null);
   });

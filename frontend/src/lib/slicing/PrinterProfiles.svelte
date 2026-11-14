@@ -35,15 +35,15 @@
     const engines = Object.keys(st?.engines || {});
     return { name: '', engine: engines[0] || 'orca', machine_preset: '', machine_config: null, process_preset: '', tools: [],
              filament_presets: {}, process_overrides: {}, machine_overrides: {}, use_model_settings: true, active: true,
-             is_default: !st?.profiles?.length, dispatch: 'none', wt_printer: '', hourly_rate: null, bed_type: '', filament_slots: null, notes: '' };
+             is_default: !st?.profiles?.length, dispatch: 'none', farm_printer: '', hourly_rate: null, bed_type: '', filament_slots: null, notes: '' };
   }
   async function start(p = null, hint = null) {
     edit = p ? { ...JSON.parse(JSON.stringify(p)), bed_type: p.bed_type || '' } : blank();
-    edit.process_preset = edit.process_preset || ''; edit.wt_printer = edit.wt_printer || '';
+    edit.process_preset = edit.process_preset || ''; edit.farm_printer = edit.farm_printer || '';
     ovText = Object.entries(edit.process_overrides || {}).map(([k, v]) => `${k} = ${v}`).join('\n');
     importName = ''; pendingIni = null; conv = null; entry = null; machines = []; procs = []; fils = [];
     q = hint?.model || '';
-    if (hint) { edit.name = hint.name || ''; if (hint.source === 'watchtower') { edit.dispatch = 'watchtower'; edit.wt_printer = hint.name; } }
+    if (hint) { edit.name = hint.name || ''; if (hint.source === 'farm') { edit.dispatch = 'farm'; edit.farm_printer = hint.name; } }
     step = p ? 4 : 1;
     if (p) await loadPresets();
     if (q) search();
@@ -144,7 +144,7 @@
     await attempt(() => api.del(`/api/printer-profiles/${p.id}`), 'Removed');
     load();
   }
-  const known = $derived(new Set((st?.profiles || []).map((p) => (p.wt_printer || p.name).toLowerCase())));
+  const known = $derived(new Set((st?.profiles || []).map((p) => (p.farm_printer || p.name).toLowerCase())));
 </script>
 
 <p class="ah-secondary" style="flex:none">Printer profiles for slicing. Each printer is sliced with OrcaSlicer or PrusaSlicer, starting from that slicer's preset for the
@@ -186,7 +186,7 @@
           <div class="mt-2"><ToolHeads prof={p} /></div>
           <div class="mt-2">Process: {p.process_preset || "by the designer's layer height, else the printer's default"}{p.bed_type ? ` · plate: ${p.bed_type}` : ''}</div>
           {#if Object.keys(p.process_overrides).length}<div class="mt-1">Overrides: {Object.entries(p.process_overrides).map(([k, v]) => `${k}=${v}`).join(', ')}</div>{/if}
-          <div class="mt-1 muted">{p.use_model_settings ? "Uses each model's recommended settings" : 'Ignores model recommendations'}{p.dispatch === 'watchtower' ? ` · approved files go to the farm${p.wt_printer ? ` (${p.wt_printer})` : ''}` : ''}{p.hourly_rate != null ? ` · ${p.hourly_rate}/h` : ''}</div>
+          <div class="mt-1 muted">{p.use_model_settings ? "Uses each model's recommended settings" : 'Ignores model recommendations'}{p.dispatch === 'farm' ? ` · approved files go to the farm${p.farm_printer ? ` (${p.farm_printer})` : ''}` : ''}{p.hourly_rate != null ? ` · ${p.hourly_rate}/h` : ''}</div>
         </div>
       {:else}<p class="muted">No printers yet. Add one to start slicing.</p>{/each}
     </div>
@@ -303,8 +303,8 @@
           <div><label class="lbl" for="fs">Filament slots (including AMS)</label><input id="fs" class="input" type="number" min="1" max="64" step="1" bind:value={edit.filament_slots} placeholder="one per tool" />
             <div class="text-[11px] muted">How many filaments it can hold at once. Models needing more colours than this are flagged.</div></div>
           <div><label class="lbl" for="pd">Approved files go to</label>
-            <select id="pd" class="input" bind:value={edit.dispatch}><option value="none">Nowhere (download them)</option><option value="watchtower">The print farm</option></select></div>
-          {#if edit.dispatch === 'watchtower'}<div><label class="lbl" for="pw">Printer name on the farm</label><input id="pw" class="input" bind:value={edit.wt_printer} /></div>{/if}
+            <select id="pd" class="input" bind:value={edit.dispatch}><option value="none">Nowhere (download them)</option><option value="farm">The print farm</option></select></div>
+          {#if edit.dispatch === 'farm'}<div><label class="lbl" for="pw">Printer name on the farm</label><input id="pw" class="input" bind:value={edit.farm_printer} /></div>{/if}
         </div>
         <div class="flex flex-col gap-2 mt-3">
           <label class="flex items-center gap-2"><input type="checkbox" bind:checked={edit.use_model_settings} /> Apply each model's recommended walls, infill, supports and layer height</label>

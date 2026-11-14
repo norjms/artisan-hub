@@ -1,4 +1,4 @@
-"""Printer codes (services/printer_status.py): descriptions, errors only while Watchtower's alarm is active, hidden
+"""Printer codes (services/printer_status.py): descriptions, errors only while the farm's alarm is active, hidden
 codes, and maintenance reminders as Upkeep tasks."""
 import pytest
 

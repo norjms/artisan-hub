@@ -5,7 +5,7 @@ engine's /spoolman/inventory routes (clients/openprinthq_api.py lib_* methods). 
 hub goes there, the spool cache (SpoolCache, FilamentCatalog) is filled from it, and spools carry scan codes
 (S<spool id>), locations with codes (L + 6) and slot assignments with an extruder.
 
-Otherwise (Watchtower farm, or no farm) the hub's own LAN Spoolman connection stays the library, as before.
+Otherwise (no farm connected) the hub's own LAN Spoolman connection stays the library, as before.
 
 spools.migrate_to_farm copies the hub's Spoolman into the farm library once (idempotent) and then turns the hub's
 spoolman connection off (it is kept, not deleted).
@@ -34,15 +34,9 @@ class LibraryError(Exception):
 
 
 def farm_library(team_id: int | None = None) -> bool:
-    """OpenPrintHQ keeps the spool library: it is the team's farm, or its connection is marked use_for_spools
-    (spools stay in OpenPrintHQ while Watchtower runs the farm)."""
-    from ..clients import farm_kind
-    from .connections import get, is_connected
-    if not is_connected("openprinthq", team_id):
-        return False
-    if farm_kind(team_id) == "openprinthq":
-        return True
-    return bool((get("openprinthq", team_id, required=False) or {}).get("use_for_spools"))
+    """The farm keeps the spool library once ArtisanHub Farm is connected."""
+    from .connections import is_connected
+    return is_connected("openprinthq", team_id)
 
 
 def _ophq():
@@ -583,7 +577,7 @@ def migrate_to_farm(db: Session, dry_run: bool = False, disable: bool = True) ->
     from ..models import BomFilament, Connection, FarmLibraryMigration as Mig, Variant
     from .connections import forget
     if not farm_library():
-        raise LibraryError(400, "ArtisanHub Farm is not this team's farm: connect it and mark it use_as_farm first")
+        raise LibraryError(400, "Connect ArtisanHub Farm first (Connections)")
     sm = spoolman()
     c = _ophq()
     src_spools = sm.spools(allow_archived=True)

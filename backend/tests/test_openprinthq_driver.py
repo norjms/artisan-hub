@@ -136,16 +136,12 @@ def ophq():
     return c, fake
 
 
-def test_is_a_farm_backend_without_store_features(ophq):
-    from app.clients.farm_base import CAPABILITIES, FarmBackend, FarmUnsupported
+def test_is_a_farm_backend(ophq):
+    from app.clients.farm_base import CAPABILITIES, FarmBackend
     c, _ = ophq
     assert isinstance(c, FarmBackend) and c.kind == "openprinthq"
     assert set(c.CAPABILITIES) <= set(CAPABILITIES)
-    assert c.has("queue") and c.has("webhooks") and not c.has("sku_mapping") and not c.has("storefronts")
-    with pytest.raises(FarmUnsupported):
-        c.sku_mappings()
-    with pytest.raises(FarmUnsupported):
-        c.submit_job(sku="BENCHY-RED")
+    assert c.has("queue") and c.has("webhooks")
     assert c.ping()["apiKey"]["scope"] == "control"
 
 
@@ -219,31 +215,14 @@ def test_commands_files_folders_and_cancel(ophq):
 
 
 def test_webhook_is_a_signed_notification_provider(ophq):
-    from app.services.setup import WT_EVENTS
+    from app.services.setup import FARM_EVENTS
     c, fake = ophq
-    c.add_webhook("https://hub.example/hooks/openprinthq", WT_EVENTS, "s3cret")
+    c.add_webhook("https://hub.example/hooks/openprinthq", FARM_EVENTS, "s3cret")
     body = fake.providers[0]
     assert body["provider_type"] == "webhook" and body["config"]["signing_secret"] == "s3cret"
     assert body["on_print_complete"] and body["on_queue_job_started"] and body["on_printer_error"]
     hooks = c.webhooks()
-    assert hooks == [{"id": 3, "url": "https://hub.example/hooks/openprinthq", "events": WT_EVENTS, "active": True}]
-
-
-def test_farm_kind_follows_the_connections(monkeypatch):
-    from app import clients
-    from app.services import connections
-    state = {"watchtower": True, "openprinthq": False}
-    cfg = {"openprinthq": {"use_as_farm": False}}
-    monkeypatch.setattr(connections, "is_connected", lambda k, t=None: state.get(k, False))
-    monkeypatch.setattr(connections, "get", lambda k, t=None, required=True: cfg.get(k))
-    assert clients.farm_kind() == "watchtower"
-    state["openprinthq"] = True
-    assert clients.farm_kind() == "watchtower"            # both connected: Watchtower unless told otherwise
-    cfg["openprinthq"]["use_as_farm"] = True
-    assert clients.farm_kind() == "openprinthq"
-    state["watchtower"] = False
-    cfg["openprinthq"]["use_as_farm"] = False
-    assert clients.farm_kind() == "openprinthq"           # the only farm connected
+    assert hooks == [{"id": 3, "url": "https://hub.example/hooks/openprinthq", "events": FARM_EVENTS, "active": True}]
 
 
 def test_openprinthq_webhook_checks_the_signature_and_routes(env):
@@ -399,20 +378,6 @@ def test_print_webhooks_queue_a_print_history_record(env):
         assert j.payload["data"]["message"] == "spaghetti"
 
 
-def test_spool_sync_only_runs_with_watchtower_as_the_farm(monkeypatch):
-    from types import SimpleNamespace
-    from app import tasks
-    from app.services import connections
-    state = {"spoolman": True, "watchtower": True, "openprinthq": True}
-    cfg = {"openprinthq": {"use_as_farm": False}}
-    monkeypatch.setattr(connections, "is_connected", lambda k, t=None: state.get(k, False))
-    monkeypatch.setattr(connections, "get", lambda k, t=None, required=True: cfg.get(k))
-    team = SimpleNamespace(id=1)
-    assert tasks._spools_both(team)
-    cfg["openprinthq"]["use_as_farm"] = True
-    assert not tasks._spools_both(team)
-
-
 def test_submit_job_pinned_to_a_printer(ophq):
     c, fake = ophq
     assert c.has("pin_printer")
@@ -421,7 +386,7 @@ def test_submit_job_pinned_to_a_printer(ophq):
     assert post["printer_id"] == 2 and "target_model" not in post and "target_group_id" not in post
 
 
-def test_cameras_are_read_like_watchtowers_a_chamber_camera_first(ophq):
+def test_cameras_are_read_with_a_chamber_camera_first(ophq):
     c, fake = ophq
     fake.cameras = [
         {"printer_id": 1, "printer_name": "X1C", "kind": "builtin", "camera_name": "Printer camera",

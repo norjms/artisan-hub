@@ -21,7 +21,7 @@ NAV_PATHS = (
     _HERE.parents[2] / "static" / "nav.json",                                  # in the container: /app/static
     _HERE.parents[3] / "frontend" / "static" / "nav.json",                     # a source checkout
 )
-FARM_LABEL = {"watchtower": "Watchtower", "openprinthq": "ArtisanHub Farm"}
+FARM_LABEL = {"openprinthq": "ArtisanHub Farm"}
 
 
 def load() -> dict:

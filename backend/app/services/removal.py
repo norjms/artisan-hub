@@ -100,31 +100,25 @@ def purge(db: Session, model_id: int) -> dict:
             if e.status != 404:
                 report["warnings"].append(f"Woo product {p.woo_product_id}: {e.message[:120]}")
 
-    # Watchtower: SKU mappings and mirrored files
+    # ArtisanHub Farm: the model's files in the farm's library
     try:
-        wt = farm()
-        for sku, mid in ((p.wt_mapping_ids or {}) if p else {}).items():
-            try:
-                wt.delete_sku_mapping(mid)
-            except ApiError as e:
-                if e.status != 404:
-                    report["warnings"].append(f"Watchtower mapping {sku}: {e.message[:100]}")
+        c = farm()
         from .shop import farm_ref, model_folder_id
         for f in m.files:
-            if farm_ref(f):                    # a ref from another farm can't be deleted through this one
+            if farm_ref(f):
                 try:
-                    wt.delete_library_file(farm_ref(f))
+                    c.delete_library_file(farm_ref(f))
                 except ApiError as e:
                     if e.status != 404:
-                        report["warnings"].append(f"Watchtower file {f.filename}: {e.message[:100]}")
+                        report["warnings"].append(f"Farm file {f.filename}: {e.message[:100]}")
         fid = model_folder_id(m)
         if fid:
             try:
-                wt.delete_library_folder(fid)
+                c.delete_library_folder(fid)
             except ApiError:
                 pass
     except Exception as e:  # noqa: BLE001
-        report["warnings"].append(f"Watchtower: {str(e)[:120]}")
+        report["warnings"].append(f"Farm: {str(e)[:120]}")
 
     # DAM: the model's photos and its collection
     try:

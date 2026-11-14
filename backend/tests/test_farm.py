@@ -1,8 +1,8 @@
-"""Farm edge: queue mirror from Watchtower webhooks and syncs, plate checks after each print."""
+"""Farm edge: queue mirror from farm webhooks and syncs, plate checks after each print."""
 import pytest
 
 
-class FakeWT:
+class FakeFarm:
     def __init__(self):
         self.commands, self.submitted = [], []
         self.active, self.done = [], []
@@ -13,11 +13,11 @@ class FakeWT:
     def command(self, printer, command, args=None, confirm=False):
         if printer == "OFF":
             from app.clients.base import ApiError
-            raise ApiError("watchtower", 409, "STATE_UNKNOWN")
+            raise ApiError("openprinthq", 409, "STATE_UNKNOWN")
         self.commands.append((printer, command))
         return {"accepted": True}
 
-    def submit_job(self, file_ref=None, sku=None, quantity=1, job_name=None, priority=None):
+    def submit_job(self, file_ref=None, quantity=1, job_name=None, priority=None):
         self.submitted.append((file_ref, job_name, priority))
         return {"job_ids": [901]}
 
@@ -30,7 +30,7 @@ class FakeWT:
         if jid in self.public:
             return self.public[jid]
         from app.clients.base import ApiError
-        raise ApiError("watchtower", 404, "NOT_FOUND")
+        raise ApiError("openprinthq", 404, "NOT_FOUND")
 
     def printers(self):
         return {"printers": self.printers_list}
@@ -53,18 +53,18 @@ def _priv(jid, status, printer=None, name="Widget_PLA_1h.gcode", **kw):
 
 
 @pytest.fixture
-def wt(monkeypatch):
+def farm_fake(monkeypatch):
     from app.services import farm
     from app.db import session_scope
     from app.kv import set_setting
-    fake = FakeWT()
+    fake = FakeFarm()
     monkeypatch.setattr(farm, "_client", lambda: fake)
     with session_scope() as db:
         set_setting(db, "stagger_minutes", 0)
     return fake
 
 
-def test_events_open_and_pass_check(env, wt):
+def test_events_open_and_pass_check(env, farm_fake):
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db import session_scope
@@ -90,21 +90,21 @@ def test_events_open_and_pass_check(env, wt):
     r = c.post(f"/api/plate-checks/{cid}/pass", json={"set_ready": True})
     assert r.status_code == 200, r.text
     assert r.json()["state"] == "passed" and r.json()["ready_set"]
-    assert wt.commands == [("H2D", "set_ready")]
+    assert farm_fake.commands == [("H2D", "set_ready")]
     assert c.post(f"/api/plate-checks/{cid}/pass", json={}).status_code == 400     # only once
     assert c.get("/api/stats").json()["plate_checks"] == 0
 
 
-def test_fail_with_reprint_and_ready_error(env, wt):
+def test_fail_with_reprint_and_ready_error(env, farm_fake):
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db import session_scope
     from app.services import farm
-    wt.active = [_priv(601, "printing", "OFF", started_at="2026-10-21T00:00:00")]
+    farm_fake.active = [_priv(601, "printing", "OFF", started_at="2026-10-21T00:00:00")]
     with session_scope() as db:
         farm.sync(db)
-        wt.active = []
-        wt.done = [_priv(601, "failed", "OFF", started_at="2026-10-21T00:00:00", completed_at="2026-10-21T01:00:00",
+        farm_fake.active = []
+        farm_fake.done = [_priv(601, "failed", "OFF", started_at="2026-10-21T00:00:00", completed_at="2026-10-21T01:00:00",
                          error="spaghetti detected")]
         out = farm.sync(db)
         assert out["changed"] == 1
@@ -119,18 +119,18 @@ def test_fail_with_reprint_and_ready_error(env, wt):
     r = c.post(f"/api/plate-checks/{cid}/fail", json={"reason": "spaghetti", "note": "came loose at layer 20",
                                                       "reprint": True, "set_ready": True}).json()
     assert r["state"] == "failed" and r["reprint_job_id"] == "901"
-    assert wt.submitted == [("uuid-601", "Widget_PLA_1h.gcode", 50)]
+    assert farm_fake.submitted == [("uuid-601", "Widget_PLA_1h.gcode", 50)]
     assert not r["ready_set"] and "STATE_UNKNOWN" in r["ready_error"]      # printer offline: Ready not set, said so
     assert c.post(f"/api/plate-checks/{cid}/retry-ready").json()["ready_set"] is False
 
 
-def test_sync_history_blocked_and_skips(env, wt):
+def test_sync_history_blocked_and_skips(env, farm_fake):
     from app.db import session_scope
     from app.services import farm
     from app.models import PlateCheck, FarmJob
     # long-finished history seen for the first time opens no check
-    wt.done = [_priv(700, "completed", "H2D", completed_at="2020-01-01T00:00:00")]
-    wt.active = [_priv(701, "waiting_filament", None, metadata={"filament_rejection": "No printers have PETG #FF0000"}),
+    farm_fake.done = [_priv(700, "completed", "H2D", completed_at="2020-01-01T00:00:00")]
+    farm_fake.active = [_priv(701, "waiting_filament", None, metadata={"filament_rejection": "No printers have PETG #FF0000"}),
                  _priv(702, "queued", None), _priv(703, "printing", "MK4S", started_at="2026-10-21T00:00:00")]
     with session_scope() as db:
         farm.sync(db)
@@ -139,11 +139,11 @@ def test_sync_history_blocked_and_skips(env, wt):
         why = {q["external_id"]: q["blocked"] for q in ov["queue"]}
         assert why["701"] == "No printers have PETG #FF0000"
         assert why["702"].startswith("No printer is Ready") and "offline: MK4S" in why["702"]
-        # a job that vanished from the queue and from Watchtower is marked deleted
-        wt.active = [_priv(701, "waiting_filament", None), _priv(703, "printing", "MK4S")]
+        # a job that vanished from the queue and from the farm is marked deleted
+        farm_fake.active = [_priv(701, "waiting_filament", None), _priv(703, "printing", "MK4S")]
         farm.sync(db)
         assert db.query(FarmJob).filter_by(external_id="702").one().status == "deleted"
-        # a waiting check is skipped once its printer starts another print (Ready was set in Watchtower)
+        # a waiting check is skipped once its printer starts another print (its plate was cleared in the farm)
         farm.ingest_event(db, "queue.job_completed", {"job_id": 703, "printer_name": "MK4S"})
         chk = db.query(PlateCheck).filter_by(external_job_id="703").one()
         farm.ingest_event(db, "queue.job_printing", {"job_id": 704, "printer_name": "MK4S"})
@@ -156,25 +156,7 @@ def test_sync_history_blocked_and_skips(env, wt):
         set_setting(db, "plate_checks", True)
 
 
-def test_webhook_routes_farm_events(env, monkeypatch):
-    import hashlib, hmac, json
-    from fastapi.testclient import TestClient
-    from app.main import app
-    from app.db import session_scope
-    from app.kv import set_setting
-    from app.models import Job
-    with session_scope() as db:
-        set_setting(db, "wt_webhook_secret", "s3cret")
-    body = json.dumps({"event": "queue.job_assigned", "data": {"job_id": 9, "printer_name": "H2D"}}).encode()
-    sig = hmac.new(b"s3cret", body, hashlib.sha256).hexdigest()
-    r = TestClient(app).post("/hooks/watchtower", content=body,
-                             headers={"x-watchtower-event": "queue.job_assigned", "x-watchtower-signature": sig})
-    assert r.status_code == 200
-    with session_scope() as db:
-        assert db.query(Job).filter_by(kind="farm.event").count() >= 1
-
-
-def test_staggered_ready(env, wt):
+def test_staggered_ready(env, farm_fake):
     from datetime import datetime, timezone
     from app.db import session_scope
     from app.services import farm
@@ -196,7 +178,7 @@ def test_staggered_ready(env, wt):
         gap_b = (b.ready_due - datetime.now(timezone.utc)).total_seconds()
         gap_c = (c.ready_due - b.ready_due).total_seconds()
         assert 200 < gap_b <= 241 and abs(gap_c - 240) < 2           # one printer every 4 minutes
-        assert wt.commands == [("H2D", "set_ready")]
+        assert farm_fake.commands == [("H2D", "set_ready")]
         jobs = db.query(Job).filter(Job.kind == "farm.set_ready").all()
         assert len(jobs) == 2
         assert farm.ready_due(db, b.id)["ready"] and b.ready_set and b.ready_due is None
@@ -239,7 +221,7 @@ def test_alert_rules_and_quiet_hours(env, monkeypatch):
     assert sent[0][2]["Priority"] == "high" and sent[0][2]["Authorization"] == "Bearer tk"
 
 
-def test_orders_routed_cancelled_and_printed(env, wt, monkeypatch):
+def test_orders_routed_cancelled_and_printed(env, farm_fake, monkeypatch):
     from app.db import session_scope
     from app.services import farm, shop
     from app.kv import set_setting
@@ -256,30 +238,33 @@ def test_orders_routed_cancelled_and_printed(env, wt, monkeypatch):
         db.add(m)
         db.flush()
         f = ModelFile(model_id=m.id, sha256="a" * 64, filename="Routed_H2D.gcode.3mf", kind="3mf_sliced", is_print_file=True,
-                      watchtower_uuid="wt-file-1", library_rel="x/Routed_H2D.gcode.3mf")
-        p = Product(model_id=m.id, sku="RT-1", title="Routed", wt_mapping_ids={})
-        m2 = Model(code="RT-2", name="Mapped", slug="mapped-rt-2")
+                      farm_file_ref="file-1", farm_kind="openprinthq", library_rel="x/Routed_H2D.gcode.3mf")
+        p = Product(model_id=m.id, sku="RT-1", title="Routed")
+        m2 = Model(code="RT-2", name="Second", slug="second-rt-2")
         db.add(m2)
         db.flush()
-        p2 = Product(model_id=m2.id, sku="RT-MAP", title="Mapped", wt_mapping_ids={"RT-MAP": 5})
-        db.add_all([f, p, p2])
+        f2 = ModelFile(model_id=m2.id, sha256="b" * 64, filename="Second_H2D.gcode.3mf", kind="3mf_sliced",
+                       is_print_file=True, farm_file_ref="file-2", farm_kind="openprinthq",
+                       library_rel="x/Second_H2D.gcode.3mf")
+        p2 = Product(model_id=m2.id, sku="RT-2", title="Second")
+        db.add_all([f, f2, p, p2])
         db.flush()
         set_setting(db, "order_routing", "hub")
         order = {"id": 9001, "number": "9001", "status": "processing", "total": "10", "billing": {"first_name": "A"},
                  "line_items": [{"id": 1, "sku": "RT-1", "name": "Routed", "quantity": 2},
-                                {"id": 2, "sku": "RT-MAP", "name": "Mapped", "quantity": 1},
+                                {"id": 2, "sku": "RT-2", "name": "Second", "quantity": 1},
                                 {"id": 3, "sku": "NOPE", "name": "Mystery", "quantity": 1}]}
         o = shop.upsert_order(db, order)
         assert db.query(Job).filter(Job.kind == "farm.route_order").count() == 1
         calls = []
-        wt.submit_job = lambda **kw: calls.append(kw) or {"job_ids": [100 + len(calls)]}
+        farm_fake.submit_job = lambda **kw: calls.append(kw) or {"job_ids": [100 + len(calls)]}
         out = farm.route_order(db, o.id)
         assert out["jobs"] == 2 and len(out["problems"]) == 1 and "NOPE" in out["problems"][0]
-        assert calls[0]["file_ref"] == "wt-file-1" and calls[0]["quantity"] == 2
-        assert calls[1]["sku"] == "RT-MAP"
+        assert calls[0]["file_ref"] == "file-1" and calls[0]["quantity"] == 2
+        assert calls[1]["file_ref"] == "file-2"
         assert o.routed_at is None                       # the mystery line keeps it from counting as routed
         ln = {x.sku: x for x in o.lines}
-        assert ln["RT-1"].wt_job_ids == [101] and ln["NOPE"].wt_error
+        assert ln["RT-1"].farm_job_ids == [101] and ln["NOPE"].farm_error
         # drop the unknown line: now routed; then both jobs complete, so the Woo order gets a note
         o.lines.remove(ln["NOPE"])
         db.flush()
@@ -294,17 +279,17 @@ def test_orders_routed_cancelled_and_printed(env, wt, monkeypatch):
         o2 = shop.upsert_order(db, {**order, "id": 9002, "number": "9002",
                                     "line_items": [{"id": 5, "sku": "RT-1", "name": "Routed", "quantity": 1}]})
         farm.route_order(db, o2.id)
-        jid = o2.lines[0].wt_job_ids[0]
+        jid = o2.lines[0].farm_job_ids[0]
         shop.upsert_order(db, {**order, "id": 9002, "number": "9002", "status": "cancelled",
                                "line_items": [{"id": 5, "sku": "RT-1", "name": "Routed", "quantity": 1}]})
         assert db.query(Job).filter(Job.kind == "farm.cancel_order").count() == 1
         out = farm.cancel_order(db, o2.id)
-        assert out["cancelled"] == [jid] and wt.cancelled == [jid]
+        assert out["cancelled"] == [jid] and farm_fake.cancelled == [jid]
         assert db.query(FarmJob).filter_by(external_id=str(jid)).one().status == "cancelled"
         set_setting(db, "order_routing", "shim")
 
 
-def test_check_photo_and_alert(env, wt, monkeypatch, tmp_path):
+def test_check_photo_and_alert(env, farm_fake, monkeypatch, tmp_path):
     from app.db import session_scope
     from app.services import farm, alerts
     from app.models import PlateCheck
@@ -325,28 +310,27 @@ def test_check_photo_and_alert(env, wt, monkeypatch, tmp_path):
     assert r.status_code == 200 and r.content.startswith(b"\xff\xd8")
 
 
-def test_order_after_farm_switch_reuploads_file(env, wt, monkeypatch):
-    """A file mirrored to Watchtower keeps its Watchtower UUID after the team switches to OpenPrintHQ. Routing an
-    order must upload it to the new farm and send that ref, not the old UUID (OpenPrintHQ wants a library file id)."""
+def test_order_uploads_a_file_the_farm_has_not_got(env, farm_fake, monkeypatch):
+    """A print file the farm's library has no id for yet (or one with an id of another kind) is uploaded when its
+    order is routed, and that id is sent; a second order reuses it."""
     from app.db import session_scope
     from app.services import farm, shop
     from app.kv import set_setting
     from app.models import Model, Product, ModelFile
-    monkeypatch.setattr(shop, "farm_kind", lambda team_id=None: "openprinthq")
     uploads, calls = [], []
-    wt.upload_file = lambda path, filename=None: uploads.append(filename) or {"uuid": "77", "id": 77}
-    wt.submit_job = lambda **kw: calls.append(kw) or {"job_ids": [500 + len(calls)]}
+    farm_fake.upload_file = lambda path, filename=None: uploads.append(filename) or {"uuid": "77", "id": 77}
+    farm_fake.submit_job = lambda **kw: calls.append(kw) or {"job_ids": [500 + len(calls)]}
     with session_scope() as db:
         m = Model(code="SW-1", name="Switched", slug="switched-sw-1")
         db.add(m)
         db.flush()
         f = ModelFile(model_id=m.id, sha256="b" * 64, filename="Switched_H2D.gcode.3mf", kind="3mf_sliced",
-                      is_print_file=True, watchtower_uuid="0c1d2e3f-0000-4000-8000-000000000001", farm_kind="watchtower",
+                      is_print_file=True, farm_file_ref="0c1d2e3f-0000-4000-8000-000000000001", farm_kind="other",
                       library_rel="x/Switched_H2D.gcode.3mf")
-        p = Product(model_id=m.id, sku="SW-1", title="Switched", wt_mapping_ids={})
+        p = Product(model_id=m.id, sku="SW-1", title="Switched")
         db.add_all([f, p])
         db.flush()
-        assert shop.farm_ref(f) is None and shop.farm_ref(f, "watchtower") == f.watchtower_uuid
+        assert shop.farm_ref(f) is None
         set_setting(db, "order_routing", "hub")
         order = {"id": 9101, "number": "9101", "status": "processing", "total": "10", "billing": {"first_name": "A"},
                  "line_items": [{"id": 1, "sku": "SW-1", "name": "Switched", "quantity": 1}]}
@@ -354,41 +338,39 @@ def test_order_after_farm_switch_reuploads_file(env, wt, monkeypatch):
         out = farm.route_order(db, o.id)
         assert out["jobs"] == 1 and not out["problems"]
         assert uploads == ["SW-1__Switched_H2D.gcode.3mf"] and calls[0]["file_ref"] == "77"
-        assert f.watchtower_uuid == "77" and f.farm_kind == "openprinthq" and shop.farm_ref(f) == "77"
-        # a second order reuses the uploaded file
+        assert f.farm_file_ref == "77" and f.farm_kind == "openprinthq" and shop.farm_ref(f) == "77"
         o2 = shop.upsert_order(db, {**order, "id": 9102, "number": "9102"})
         farm.route_order(db, o2.id)
         assert len(uploads) == 1 and calls[1]["file_ref"] == "77"
 
 
-def test_legacy_rows_count_as_watchtower(env):
+def test_farm_refs(env):
     from app.models import ModelFile
     from app.services import shop
-    f = ModelFile(filename="a.gcode", kind="gcode", watchtower_uuid="u-1")
-    assert shop.farm_ref(f, "watchtower") == "u-1" and shop.farm_ref(f, "openprinthq") is None
-    shop.set_farm_ref(f, "9", "openprinthq")
-    assert (f.watchtower_uuid, f.farm_kind) == ("9", "openprinthq")
+    f = ModelFile(filename="a.gcode", kind="gcode", farm_file_ref="u-1")
+    assert shop.farm_ref(f) is None                    # no kind: not an id the farm knows
+    shop.set_farm_ref(f, "9")
+    assert (f.farm_file_ref, f.farm_kind) == ("9", "openprinthq") and shop.farm_ref(f) == "9"
     shop.set_farm_ref(f, None)
     assert f.farm_kind is None
 
 
-def test_order_jobs_carry_max_retries(env, wt, monkeypatch):
+def test_order_jobs_carry_max_retries(env, farm_fake, monkeypatch):
     from app.db import session_scope
     from app.services import farm, shop
     from app.kv import set_setting
     from app.models import Model, Product, ModelFile
-    monkeypatch.setattr(shop, "farm_kind", lambda team_id=None: "openprinthq")
     calls = []
-    wt.has = lambda cap: cap == "retries"
-    wt.upload_file = lambda path, filename=None: {"uuid": "88"}
-    wt.submit_job = lambda **kw: calls.append(kw) or {"job_ids": [700 + len(calls)]}
+    farm_fake.has = lambda cap: cap == "retries"
+    farm_fake.upload_file = lambda path, filename=None: {"uuid": "88"}
+    farm_fake.submit_job = lambda **kw: calls.append(kw) or {"job_ids": [700 + len(calls)]}
     with session_scope() as db:
         m = Model(code="RTY-1", name="Retry", slug="retry-rty-1")
         db.add(m)
         db.flush()
         db.add_all([ModelFile(model_id=m.id, sha256="c" * 64, filename="R.gcode.3mf", kind="3mf_sliced",
                               is_print_file=True, library_rel="x/R.gcode.3mf"),
-                    Product(model_id=m.id, sku="RTY-1", title="Retry", wt_mapping_ids={})])
+                    Product(model_id=m.id, sku="RTY-1", title="Retry")])
         db.flush()
         set_setting(db, "order_routing", "hub")
         assert farm.max_retries(db) == 1            # default
@@ -404,7 +386,7 @@ def test_order_jobs_carry_max_retries(env, wt, monkeypatch):
         assert "max_retries" not in calls[-1]
 
 
-def test_periodic_farm_sync_slows_when_webhooks_arrive(env, wt, monkeypatch):
+def test_periodic_farm_sync_slows_when_webhooks_arrive(env, farm_fake, monkeypatch):
     import time
     from types import SimpleNamespace
     from app.db import session_scope

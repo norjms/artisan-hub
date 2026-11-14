@@ -3,7 +3,7 @@
 The themes come from the shared design package (artisanhub-ui). glass-dark is the only one today; the names exist so
 that a light or high-contrast theme can be added without changing anything that stores or reads the choice.
 
-Earlier hubs saved a "skin" (watchtower, openprinthq or classic) and a light or dark "mode". Those are gone: every
+Earlier hubs saved a "skin" and a light or dark "mode". Those are gone: every
 saved value, known or not, becomes glass-dark (migrate_prefs, run once at startup by db.init_db).
 """
 from sqlalchemy import select, update

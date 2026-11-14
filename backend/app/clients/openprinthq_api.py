@@ -1,8 +1,7 @@
 """OpenPrintHQ driver of the farm interface (clients/farm_base.py), 2026-10-22.
 
 Talks to an OpenPrintHQ control plane with a scoped API key (`ophqk_...`, scope `control` for everything below)
-and reaches the engine API through it: /api/engine/api/v1/... Answers are mapped to the shapes the hub already reads
-from Watchtower, so the rest of the hub does not care which farm it runs.
+and reaches the engine API through it: /api/engine/api/v1/... Answers are mapped to the shapes the rest of the hub reads.
 
 What maps how:
 - Jobs are the engine's queue items. Status: pending -> queued (waiting_filament / held when the engine says why),
@@ -15,12 +14,12 @@ What maps how:
   (/maintenance/printers/{id}/log) and out of service is the engine's per-printer flag
   (/printers/{id}/out-of-service). Engines older than that feature have neither: the driver probes once
   (cached for ENGINE_PROBE_TTL) and only then reports the maintenance_log and out_of_service capabilities.
-- Priority: engines with the same feature take a 0-100 priority per queue item (Watchtower's scale: 25 low,
+- Priority: engines with the same feature take a 0-100 priority per queue item (25 low,
   50 normal, 75 high, 100 urgent; higher dispatches first). Older engines get the old behaviour: 75 and up goes
   in at the top of the queue.
 - Finished prints: the engine's print webhooks carry no queue id, so last_finished() finds the queue item that
   just ended on that printer, for the hub's per-model print history.
-- No SKU mappings or storefronts (the hub keeps SKU to file itself and sends file jobs).
+- The hub decides which file prints for an order and sends file jobs.
 - Spools (2026-10-23): the engine tenant's Spoolman is the one filament library. The lib_* methods use the engine's
   /spoolman/inventory routes; services/spool_library.py decides when the hub reads them instead of a LAN Spoolman.
 - Commands: set_ready/clear_plate, pause, resume, stop/cancel, light_on/off (chamber light), home, set_temperature
@@ -288,8 +287,8 @@ class OpenPrintHQClient(BaseClient, FarmBackend):
             return []
 
     def camera_sources(self, printer: str) -> list[str]:
-        """The printer's live camera streams, a chamber camera first: the same shape as Watchtower's, so the hub
-        reads cameras from either farm the same way. Cameras switched off or known to be offline are left out."""
+        """The printer's live camera streams, a chamber camera first: one list the hub's pages and the app
+        read. Cameras switched off or known to be offline are left out."""
         p = self._by_name(printer)
         mine = [c for c in self._cameras() if c.get("printer_id") == p.get("id") and c.get("enabled", True)
                 and str(c.get("state", "")).upper() not in ("OFFLINE", "DISABLED") and c.get("stream_name")]
@@ -372,13 +371,11 @@ class OpenPrintHQClient(BaseClient, FarmBackend):
             raise ApiError(self.service, 404, f"no printer group named {self.target_group}")
         return gid
 
-    def submit_job(self, file_ref=None, sku=None, quantity=1, job_name=None, priority=None, max_retries=None,
+    def submit_job(self, file_ref=None, quantity=1, job_name=None, priority=None, max_retries=None,
                    printer=None, start=False):
         """Queue a library file. With printer (a farm printer name) the job is pinned to it and waits for it if
         it is busy; otherwise the farm picks: the connection's printer group if set, else any printer of the model
         the file was sliced for."""
-        if sku and not file_ref:
-            raise FarmUnsupported(self.kind, "sku_mapping")
         fid = int(file_ref)
         if priority is not None and self.engine_parity():
             body = {"library_file_id": fid, "priority": _priority(priority)}
@@ -428,7 +425,7 @@ class OpenPrintHQClient(BaseClient, FarmBackend):
         return self.e("GET", "/queue/stats", params={"days": max(1, min(365, int(days)))}) or {}
 
     def _private(self, item: dict) -> dict:
-        """A queue item in the shape of Watchtower's private queue (what services.farm.fields_private reads)."""
+        """A queue item in the shape services.farm.fields_private reads."""
         st = hub_status(item)
         md = {"quantity_required": 1, "file_uuid": str(item["library_file_id"]) if item.get("library_file_id") else None,
               "print_time_seconds": item.get("print_time_seconds"), "filament_used_g": item.get("filament_used_grams"),
@@ -502,7 +499,7 @@ class OpenPrintHQClient(BaseClient, FarmBackend):
 
     # ---- maintenance (the engine's per-printer maintenance items) ----
     def maint_schedules(self):
-        """One schedule per enabled-or-not maintenance item, in the shape of Watchtower's schedule list."""
+        """One schedule per enabled-or-not maintenance item, in the shape services/maintenance.py reads."""
         out = []
         for pr in self.e("GET", "/maintenance/overview") or []:
             for m in pr.get("maintenance_items") or []:
@@ -540,7 +537,7 @@ class OpenPrintHQClient(BaseClient, FarmBackend):
         return self.e("POST", f"/maintenance/printers/{self.printer_id(printer)}/log", json=body, retries=1)
 
     def maint_down(self) -> list:
-        """Printers out of service, in Watchtower's shape ({printer_name, reason, since})."""
+        """Printers out of service, as {printer_name, reason, since}."""
         if not self.engine_parity():
             return []
         return [{"printer_name": d.get("name"), "reason": d.get("reason"), "since": d.get("since")}

@@ -5,8 +5,8 @@ with. The hub turns that raw code into what people should see:
 
 - the code's description, from Bambu's published list (https://e.bambulab.com/query.php, the list Bambu Studio and
   Handy show; cached for a day, with the maintenance reminders built in for when Bambu cannot be reached);
-- an error only while Watchtower has an active alarm for it (alarm.raised until alarm.cleared, from its webhooks);
-  once Watchtower clears it, the printer shows idle;
+- an error only while the farm has an active alarm for it (alarm.raised until alarm.cleared, from its webhooks);
+  once the farm clears it, the printer shows idle;
 - never an error for a code someone hid as a nuisance (Settings, or Hide this error in the app);
 - a maintenance reminder ("Threaded rods need lubrication now") is not an error at all: it opens an Upkeep task once
   per printer and code, the printer reports idle with maintenance due, and marking the task done clears it (it does
@@ -90,7 +90,7 @@ def is_maintenance(code, text: str | None = None) -> bool:
     return bool(t and MAINTENANCE_RE.search(t))
 
 
-# ---------------------------------------------------------------- active alarms (Watchtower webhooks)
+# ---------------------------------------------------------------- active alarms (farm webhooks)
 
 def _key(printer) -> str:
     return str(printer or "").strip().lower()
@@ -107,7 +107,7 @@ def alarm_raised(db: Session, printer: str, code, message: str | None):
 
 
 def alarm_cleared(db: Session, printer: str, code=None):
-    """Watchtower cleared an alarm: that code, or all of the printer's when the event names none."""
+    """The farm cleared an alarm: that code, or all of the printer's when the event names none."""
     if not printer:
         return
     act = dict(setting(db, "active_alarms") or {})
@@ -208,7 +208,7 @@ def annotate(db: Session, printers: list[dict] | None) -> list[dict] | None:
             elif code in alarms:
                 p.update(error=code, error_message=msg or alarms[code].get("message") or None)
             else:
-                p["error"] = None                                    # Watchtower has cleared it
+                p["error"] = None                                    # the farm has cleared it
         st = str(p.get("state") or "").strip().lower()
         if not p.get("error") and not p.get("busy") and st in LAST_JOB_STATES:
             p.update(last_result=st, state="idle")

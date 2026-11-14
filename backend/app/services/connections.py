@@ -19,15 +19,12 @@ KINDS = {
             "Store URL plus a REST API key (WooCommerce > Settings > Advanced > REST API, read/write)."),
     "dam": ("ResourceSpace DAM", ["url", "host", "user"], ["key"],
             "API user and its private key (ResourceSpace > My account > API key). Host is the public name the DAM expects."),
-    "watchtower": ("Watchtower", ["url", "public_url", "username"], ["api_key", "password"],
-                   "Public API key plus a login for the shop and library pages."),
-    "openprinthq": ("ArtisanHub Farm", ["url", "public_url", "target_group", "use_as_farm", "use_for_spools", "verify_tls"],
+    "openprinthq": ("ArtisanHub Farm", ["url", "public_url", "target_group", "verify_tls"],
                     ["api_key"],
                     "The ArtisanHub Farm address and an API key with control scope (ArtisanHub Farm, Settings, API "
                     "keys). "
                     "Jobs go to the printer group named in target_group, or else to printers of the model a file was "
-                    "sliced for. With Watchtower connected too, use_as_farm picks ArtisanHub Farm as the farm, and "
-                    "use_for_spools keeps the spool library in ArtisanHub Farm while Watchtower runs the farm."),
+                    "sliced for."),
     "inventree": ("InvenTree", ["url", "host", "public_url"], ["token"], "API token of a user with part and stock access."),
     "spoolman": ("Spoolman", ["url", "public_url"], [], "Spoolman base URL."),
     "manyfold": ("Manyfold", ["url", "public_url", "library_path"], ["client_id", "client_secret"],
@@ -57,7 +54,7 @@ KINDS = {
                "Optional. Leave unset to use the hub's shared slicer. Set it to send this team's slices to its own "
                "slicer service (the artisan-slicer container, run by you) at this URL with its bearer token."),
 }
-BOOL_FIELDS = {"verify_tls", "use_as_farm"}
+BOOL_FIELDS = {"verify_tls"}
 
 
 class NotConnected(RuntimeError):
@@ -197,6 +194,9 @@ def save(db: Session, kind: str, config: dict | None, secrets: dict | None, enab
     row.last_test_msg = None
     db.flush()
     forget(row.team_id, kind)
+    if kind == "openprinthq" and cfg.get("url"):
+        from .installation import record_farm
+        record_farm(db)
     return row
 
 
@@ -209,9 +209,6 @@ def env_seed() -> dict:
                       {"key": s.woo_key, "secret": s.woo_secret, "webhook_secret": s.woo_webhook_secret})
     if s.rs_key:
         out["dam"] = ({"url": s.rs_url, "host": s.rs_host, "user": s.rs_user}, {"key": s.rs_key})
-    if s.wt_api_key:
-        out["watchtower"] = ({"url": s.wt_url, "public_url": s.wt_public_url, "username": s.wt_username},
-                             {"api_key": s.wt_api_key, "password": s.wt_password})
     if s.inventree_token:
         out["inventree"] = ({"url": s.inventree_url, "host": s.inventree_host, "public_url": s.inventree_public_url},
                             {"token": s.inventree_token})
@@ -234,8 +231,6 @@ def test(kind: str) -> tuple[bool, str]:
             clients.woo().system_status()
         elif kind == "dam":
             clients.dam().fields()
-        elif kind == "watchtower":
-            clients.watchtower().ping()
         elif kind == "openprinthq":
             clients.openprinthq().ping()
         elif kind == "inventree":

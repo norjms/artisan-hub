@@ -20,7 +20,7 @@ Licence: [GNU AGPL-3.0](LICENSE).
 - **Store (WooCommerce).** New products are created as drafts and only go live from the hub. Store stock is
   the number of units buildable from parts and filament on hand, minus open orders. Orders arrive by webhook.
   An instant quote form lets customers upload their own model to be sliced and priced.
-- **Print farm.** One print farm per installation, OpenPrintHQ or Watchtower: print queue, plate checks,
+- **Print farm.** ArtisanHub Farm (OpenPrintHQ) runs the printers: print queue, plate checks,
   timeline, maintenance, alarms and a wall display (`/tv`).
 - **Slicing.** With a slicer service connected, the hub slices models for the farm's printers and re-slices
   plates.
@@ -45,7 +45,7 @@ Optional services the hub connects to:
 
 | Service | Role |
 |---|---|
-| OpenPrintHQ or Watchtower | Print farm: printers, print queue, print-ready files. |
+| ArtisanHub Farm (OpenPrintHQ) | Print farm: printers, print queue, print-ready files, filament library. |
 | Spoolman | Filament spools, the source of truth for filament on hand. |
 | Manyfold | Model library with 3D preview, sharing a folder with the hub. |
 | InvenTree | Parts such as screws, magnets, inserts and packaging; suppliers and purchase orders. |

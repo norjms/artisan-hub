@@ -30,8 +30,8 @@ def image(i: Image) -> dict:
 def mfile(f: ModelFile) -> dict:
     return {"id": f.id, "filename": f.filename, "kind": f.kind, "bytes": f.bytes, "slicer": f.slicer,
             "printer": f.printer, "plates": f.plates, "print_seconds": f.print_seconds, "filament": f.filament,
-            "settings": f.settings, "is_print_file": f.is_print_file, "watchtower_uuid": f.watchtower_uuid, "farm_kind": f.farm_kind,
-            "watchtower_error": f.watchtower_error, "download": f"/api/files/{f.id}/download"}
+            "settings": f.settings, "is_print_file": f.is_print_file, "farm_file_ref": f.farm_file_ref, "farm_kind": f.farm_kind,
+            "farm_file_error": f.farm_file_error, "download": f"/api/files/{f.id}/download"}
 
 
 def variant(v: Variant) -> dict:
@@ -51,7 +51,7 @@ def product(p: Product | None) -> dict | None:
         "dims_cm": p.dims_cm, "color_mode": p.color_mode, "target_buffer": p.target_buffer, "stock_cap": p.stock_cap,
         "live": p.live, "woo_product_id": p.woo_product_id, "woo_status": p.woo_status,
         "woo_synced_at": p.woo_synced_at.isoformat() if p.woo_synced_at else None, "woo_error": p.woo_error,
-        "woo_stock_pushed": p.woo_stock_pushed, "wt_mapping_ids": p.wt_mapping_ids, "wt_error": p.wt_error,
+        "woo_stock_pushed": p.woo_stock_pushed, "farm_error": p.farm_error,
         "woo_admin_url": f"{woo_url}/wp-admin/post.php?post={p.woo_product_id}&action=edit" if p.woo_product_id and woo_url else None,
         "woo_view_url": f"{woo_url}/?p={p.woo_product_id}" if p.woo_product_id and woo_url else None,
         "variants": [variant(v) for v in p.variants],

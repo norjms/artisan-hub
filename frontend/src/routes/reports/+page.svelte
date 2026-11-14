@@ -79,7 +79,7 @@
       </table>
     </div>
   </div>
-  <p class="text-xs muted mt-3">Grams are {farmName() === 'Watchtower' ? "Watchtower's" : "the farm's"} estimate from the sliced file; a failed print counts the share it got through. Costs use the same filament prices and printer rates as slice costs.</p>
+  <p class="text-xs muted mt-3">Grams are the farm's estimate from the sliced file; a failed print counts the share it got through. Costs use the same filament prices and printer rates as slice costs.</p>
 
 {:else if view === 'filament'}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">

@@ -25,10 +25,10 @@
     await attempt(() => api.post(`/api/maintenance/tasks/${t.id}/service`, { out_of_service: on }), on ? `${t.printer} is out of service in ${farmName()}` : `${t.printer} is back in service`);
     load();
   }
-  async function syncWt() {
+  async function syncFarm() {
     const r = await attempt(() => api.post('/api/maintenance/sync'));
-    const w = r.watchtower || {};
-    toast(w.error ? `Watchtower: ${w.error}` : `Watchtower: ${w.schedules ?? 0} schedules${w.added ? `, ${w.added} new` : ''}${w.closed_by_watchtower ? `, ${w.closed_by_watchtower} done there` : ''}; ${r.opened.length} task(s) opened`, w.error ? 'bad' : 'ok', 7000);
+    const w = r.farm || {};
+    toast(w.error ? `Farm: ${w.error}` : `Farm: ${w.schedules ?? 0} maintenance items${w.added ? `, ${w.added} new` : ''}${w.closed_by_farm ? `, ${w.closed_by_farm} done there` : ''}; ${r.opened.length} task(s) opened`, w.error ? 'bad' : 'ok', 7000);
     load();
   }
   async function saveTask() {
@@ -37,7 +37,7 @@
   }
   function openPlan(p) {
     loadParts();
-    plan = p ? { id: p.id, printer: p.printer, title: p.title, every_hours: p.every_hours, every_days: p.every_days, parts: [...p.parts], notes: p.notes || '', active: p.active, watchtower: p.watchtower }
+    plan = p ? { id: p.id, printer: p.printer, title: p.title, every_hours: p.every_hours, every_days: p.every_days, parts: [...p.parts], notes: p.notes || '', active: p.active, linked: p.linked }
              : { printer: printers[0] || '', title: '', every_hours: 100, every_days: null, parts: [], notes: '', active: true };
   }
   async function savePlan() {
@@ -81,7 +81,7 @@
   <div class="flex flex-wrap items-center gap-2 mb-3">
     <h2 class="font-semibold mr-auto">Open work orders</h2>
     {#each m.down as d}<span class="chip bad">{d} out of service</span>{/each}
-    {#if can('farm') && m.linked}<button class="btn sm" onclick={syncWt}>Sync with Watchtower</button>{/if}
+    {#if can('farm') && m.linked}<button class="btn sm" onclick={syncFarm}>Sync with the farm</button>{/if}
     {#if can('farm')}<button class="btn sm" onclick={openTask}>Add a task</button>{/if}
   </div>
   {#if newTask}
@@ -92,7 +92,7 @@
       </div>
       {@render partEditor(newTask)}
       <input class="input" placeholder="Notes" bind:value={newTask.notes} />
-      {#if m.linked}<label class="text-sm flex items-center gap-2"><input type="checkbox" bind:checked={newTask.out_of_service} /> Take the printer out of service until this is done (Watchtower sends it no new jobs)</label>{/if}
+      {#if m.linked}<label class="text-sm flex items-center gap-2"><input type="checkbox" bind:checked={newTask.out_of_service} /> Take the printer out of service until this is done (the farm sends it no new jobs)</label>{/if}
       <div class="flex gap-2"><button class="btn primary" onclick={saveTask}>Add task</button><button class="btn" onclick={() => (newTask = null)}>Cancel</button></div>
     </div>
   {/if}
@@ -105,7 +105,7 @@
         {#if t.parts.length}<div class="text-xs muted">Parts: {t.parts.map((p) => `${p.qty} x ${p.name || p.part_id}`).join(', ')}</div>{/if}
         {#if t.notes}<div class="text-xs muted">{t.notes}</div>{/if}
         <div class="text-xs muted">opened {ago(t.created_at)}</div>
-        {#if t.wt_note}<div class="text-xs text-amber-600">{t.wt_note}</div>{/if}
+        {#if t.farm_note}<div class="text-xs text-amber-600">{t.farm_note}</div>{/if}
         {#if can('farm')}<div class="flex flex-wrap gap-2"><button class="btn primary sm" onclick={() => done(t)}>Done</button><button class="btn sm" onclick={() => dismiss(t)}>Dismiss</button>
           {#if m.linked}<button class="btn sm" onclick={() => service(t, !t.out_of_service)}>{t.out_of_service ? 'Back in service' : 'Out of service'}</button>{/if}</div>{/if}
       </div>
@@ -119,13 +119,13 @@
   {#if plan}
     <div class="panel p-4 mb-4 flex flex-col gap-2">
       <div class="flex flex-wrap gap-2">
-        <input class="input" style="width: 10rem" list="farm-printers" placeholder="Printer" disabled={plan.watchtower} bind:value={plan.printer} />
-        <input class="input" style="flex: 1; min-width: 14rem" placeholder="Task (e.g. Clean and lube the rods)" disabled={plan.watchtower} bind:value={plan.title} />
+        <input class="input" style="width: 10rem" list="farm-printers" placeholder="Printer" disabled={plan.linked} bind:value={plan.printer} />
+        <input class="input" style="flex: 1; min-width: 14rem" placeholder="Task (e.g. Clean and lube the rods)" disabled={plan.linked} bind:value={plan.title} />
       </div>
       <div class="flex flex-wrap gap-3 text-sm items-center">
-        <label>Every <input class="input inline-block" style="width: 6rem" type="number" min="0" disabled={plan.watchtower} bind:value={plan.every_hours} /> print hours</label>
-        <label>and/or every <input class="input inline-block" style="width: 6rem" type="number" min="0" disabled={plan.watchtower} bind:value={plan.every_days} /> days</label>
-        {#if plan.watchtower}<span class="text-xs muted">From Watchtower's Maintenance tab: change the task and interval there. Spare parts, notes and on/off are kept here.</span>{/if}
+        <label>Every <input class="input inline-block" style="width: 6rem" type="number" min="0" disabled={plan.linked} bind:value={plan.every_hours} /> print hours</label>
+        <label>and/or every <input class="input inline-block" style="width: 6rem" type="number" min="0" disabled={plan.linked} bind:value={plan.every_days} /> days</label>
+        {#if plan.linked}<span class="text-xs muted">From the farm's maintenance: change the task and interval there. Spare parts, notes and on/off are kept here.</span>{/if}
         <label class="flex items-center gap-2"><input type="checkbox" bind:checked={plan.active} /> Active</label>
       </div>
       {@render partEditor(plan)}
@@ -139,16 +139,16 @@
       <tbody>
         {#each m.plans as p}
           <tr class={p.active ? '' : 'muted'}>
-            <td>{p.printer}</td><td>{p.title}{#if p.watchtower} <span class="chip" title="Linked with Watchtower's Maintenance tab">Watchtower</span>{/if}</td>
+            <td>{p.printer}</td><td>{p.title}{#if p.linked} <span class="chip" title="Linked with the farm's maintenance">Farm</span>{/if}</td>
             <td class="text-sm">{[p.every_hours && `${p.every_hours} print h`, p.every_days && `${p.every_days} days`].filter(Boolean).join(' or ')}</td>
             <td class="text-sm">{[p.hours_since != null && `${p.hours_since} h`, p.days_since != null && `${p.days_since} days`].filter(Boolean).join(', ') || 'never done'} {#if p.due}<span class="chip warn">due</span>{/if}</td>
             <td class="text-xs">{p.parts.map((x) => `${x.qty} x ${x.name || x.part_id}`).join(', ')}</td>
-            <td>{#if can('farm')}<button class="btn sm" onclick={() => openPlan(p)}>Edit</button> {#if !p.watchtower}<button class="btn sm danger" onclick={() => delPlan(p)}>Remove</button>{/if}{/if}</td>
+            <td>{#if can('farm')}<button class="btn sm" onclick={() => openPlan(p)}>Edit</button> {#if !p.linked}<button class="btn sm danger" onclick={() => delPlan(p)}>Remove</button>{/if}{/if}</td>
           </tr>
         {:else}<tr><td colspan="6" class="muted text-center py-4">No plans yet. A plan opens a task every so many print hours or days.</td></tr>{/each}
       </tbody>
     </table>
-    <p class="text-xs muted mt-2">Plans marked Watchtower are the schedules on Watchtower's Maintenance tab: finishing one here completes it there, and one completed there closes the task here. Other tasks go into Watchtower's maintenance log. Print hours are Watchtower's count when it has one, else the jobs the hub has seen Watchtower finish. Last 30 days: {Object.entries(m.hours).map(([k, v]) => `${k} ${v} h`).join(', ') || 'none yet'}.</p>
+    <p class="text-xs muted mt-2">Plans marked Farm are the farm's maintenance items: finishing one here marks it done there, and one done there closes the task here. Other tasks go into the farm's maintenance log. Print hours are the farm's count when it has one, else the jobs the hub has seen the farm finish. Last 30 days: {Object.entries(m.hours).map(([k, v]) => `${k} ${v} h`).join(', ') || 'none yet'}.</p>
   </div>
 
   {#if m.recent.length}
@@ -161,7 +161,7 @@
             <tr><td class="text-xs muted">{ago(t.done_at)}</td><td>{t.printer}</td><td>{t.title}</td>
               <td><span class="chip {t.state === 'done' ? 'ok' : ''}">{t.state}</span></td>
               <td class="text-xs">{t.parts_used.map((p) => `${p.qty} x ${p.name || p.part_id}`).join(', ')}{#if t.parts_error}<div class="text-red-600">{t.parts_error}</div>{/if}</td>
-              <td class="text-xs muted">{t.done_by}{#if t.wt_note}<div>{t.wt_note}</div>{/if}</td></tr>
+              <td class="text-xs muted">{t.done_by}{#if t.farm_note}<div>{t.farm_note}</div>{/if}</td></tr>
           {/each}
         </tbody>
       </table>

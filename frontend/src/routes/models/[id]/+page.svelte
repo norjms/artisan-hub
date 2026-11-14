@@ -122,7 +122,7 @@
             {#if p.live && p.woo_view_url}<a class="btn" target="_blank" href={p.woo_view_url}>View</a>{/if}
           </div>
           {#if p.woo_error}<div class="mt-3 text-sm" style="color:var(--bad)">Store: {p.woo_error}</div>{/if}
-          {#if p.wt_error}<div class="mt-1 text-sm" style="color:var(--warn)">{FarmName()}: {p.wt_error}</div>{/if}
+          {#if p.farm_error}<div class="mt-1 text-sm" style="color:var(--warn)">{FarmName()}: {p.farm_error}</div>{/if}
           {#if p.woo_synced_at}<div class="mt-2 text-xs muted">Last pushed {ago(p.woo_synced_at)} · stock on store {JSON.stringify(p.woo_stock_pushed)}</div>{/if}
         {/if}
       </div>
@@ -186,7 +186,7 @@
                 <li>{delInfo.will_remove.photos} photo(s) and {delInfo.will_remove.files} model file(s) in the hub and library{delInfo.will_remove.library_folder ? '' : ''}</li>
                 {#if delInfo.will_remove.woo_draft}<li>the WooCommerce draft</li>{/if}
                 {#if delInfo.will_remove.dam_photos}<li>{delInfo.will_remove.dam_photos} DAM photo(s){delInfo.will_remove.dam_collection ? ' and its collection' : ''}</li>{/if}
-                {#if delInfo.will_remove.watchtower_files || delInfo.will_remove.watchtower_mappings}<li>{delInfo.will_remove.watchtower_files} file(s) in {farmName()}, {delInfo.will_remove.watchtower_mappings} SKU mapping(s)</li>{/if}
+                {#if delInfo.will_remove.farm_files}<li>{delInfo.will_remove.farm_files} file(s) in {farmName()}</li>{/if}
                 <li>Manyfold drops it on its next scan</li>
                 <li>License records are kept in an archive folder</li>
                 <li>The library scanner won't re-import it (undo in Settings)</li>

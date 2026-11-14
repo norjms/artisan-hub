@@ -56,7 +56,7 @@ def me(db: Session = Depends(get_db), p: Principal = Depends(need("read"))):
             "scopes": p.get("perms") or [], "perms": p.get("perms") or [], "teams": teams,
             "links": {"woo": woo + "/wp-admin/" if woo else None, "dam": f"https://{dam}" if dam and "://" not in dam else dam,
                       "models": settings().models_url or None,
-                      "manyfold": public_url("manyfold"), "watchtower": public_url("watchtower"),
+                      "manyfold": public_url("manyfold"), "farm": public_url("openprinthq"),
                       "inventree": public_url("inventree"), "spoolman": public_url("spoolman")}}
 
 
@@ -306,7 +306,7 @@ def orders(db: Session = Depends(get_db), _: Principal = Depends(need("read"))):
              "placed_at": o.placed_at.isoformat() if o.placed_at else None,
              "woo_url": f"{_pub('woo', 'url')}/wp-admin/post.php?post={o.woo_order_id}&action=edit" if _pub('woo', 'url') else None,
              "lines": [{"sku": ln.sku, "name": ln.name, "qty": ln.qty, "product_id": ln.product_id,
-                        "variant_id": ln.variant_id, "wt_job_ids": ln.wt_job_ids or [], "wt_error": ln.wt_error,
+                        "variant_id": ln.variant_id, "farm_job_ids": ln.farm_job_ids or [], "farm_error": ln.farm_error,
                         "model_id": db.get(Product, ln.product_id).model_id if ln.product_id else None}
                        for ln in o.lines]} for o in rows]
 
@@ -350,7 +350,7 @@ ACTIONS = {"scan-library": ("library.scan_deltaprints", "manual:scan"), "scan-in
            "refresh-spools": ("inventory.refresh_spools", "refresh:spools"),
            "sync-stock": ("woo.sync_stock", "stock:all"), "poll-orders": ("woo.poll_orders", "manual:orders"),
            "manyfold-rescan": ("manyfold.rescan", "manyfold:rescan"), "manyfold-link": ("manyfold.link", "manyfold:link"),
-           "setup": ("setup.run", "setup"), "spoolman-import-watchtower": ("spoolman.import_watchtower", "spoolman:import"),
+           "setup": ("setup.run", "setup"),
            "license-recheck": ("license.recheck", "manual:license-recheck"),
            "spools-migrate-to-farm": ("spools.migrate_to_farm", "spools:migrate")}
 
@@ -359,7 +359,7 @@ ACTIONS = {"scan-library": ("library.scan_deltaprints", "manual:scan"), "scan-in
 def action(name: str, force: bool = False, db: Session = Depends(get_db), p: Principal = Depends(need("models"))):
     if name not in ACTIONS:
         raise HTTPException(404)
-    if name in ("setup", "spoolman-import-watchtower", "spools-migrate-to-farm") and "settings" not in (p.get("perms") or []):
+    if name in ("setup", "spools-migrate-to-farm") and "settings" not in (p.get("perms") or []):
         raise HTTPException(403, "you don't have permission to change team settings")
     kind, ref = ACTIONS[name]
     j = enqueue(db, kind, ref=ref, payload={"force": force} if force else {}, actor=p.actor)
@@ -368,7 +368,7 @@ def action(name: str, force: bool = False, db: Session = Depends(get_db), p: Pri
 
 
 # ---------- settings / keys ----------
-EDITABLE = {"wt_auto_queue": True, "wt_mirror_library": True, "consume_parts_on_complete": True, "default_target_buffer": 2, "default_stock_cap": 10, "hide_on_license_expiry": False}
+EDITABLE = {"farm_mirror_library": True, "consume_parts_on_complete": True, "default_target_buffer": 2, "default_stock_cap": 10, "hide_on_license_expiry": False}
 
 
 def _editable():
@@ -572,31 +572,6 @@ async def woo_hook(request: Request, team_slug: str | None = None, db: Session =
     return {"ok": True}
 
 
-@router.post("/hooks/watchtower")
-@router.post("/hooks/watchtower/{team_slug}")
-async def wt_hook(request: Request, team_slug: str | None = None, db: Session = Depends(get_db)):
-    raw = await request.body()
-    _hook_team(db, team_slug)
-    secret = (setting(db, "wt_webhook_secret") or "").encode()
-    sig = request.headers.get("x-watchtower-signature", "")
-    if not secret or not hmac.compare_digest(sig, hmac.new(secret, raw, hashlib.sha256).hexdigest()):
-        raise HTTPException(401, "bad signature")
-    set_setting(db, "farm_webhook_at", time.time())    # the periodic farm sync slows down while hooks arrive
-    name = request.headers.get("x-watchtower-event", "")
-    body = json.loads(raw or b"{}")
-    event(db, "watchtower", f"{name}: {json.dumps(body)[:500]}")
-    if name.startswith("shop.order"):
-        enqueue(db, "woo.poll_orders", ref="manual:orders", delay=5)
-    if name.startswith(("queue.", "printer.", "alarm.", "vision.")):
-        enqueue(db, "farm.event", payload={"event": name, "data": body.get("data") or {}}, max_attempts=3)
-    if name in ("queue.job_completed", "queue.job_failed", "queue.job_cancelled"):
-        jid = (body.get("data") or {}).get("job_id")
-        enqueue(db, "slicing.farm_job", ref=f"farmjob:{jid}" if jid else None,
-                payload={"event": name, "data": body.get("data") or {}}, delay=3, max_attempts=3)
-    db.commit()
-    return {"ok": True}
-
-
 OPHQ_PRINTS = {"print_complete": "queue.job_completed", "print_failed": "queue.job_failed",
                "print_stopped": "queue.job_cancelled"}
 OPHQ_ALERTS = {"printer_offline": "printer.offline", "printer_error": "alarm.raised", "ai_failure_detection": "vision.failure_detected"}
@@ -623,7 +598,7 @@ def ophq_event_text(name: str, body: dict) -> str:
 async def ophq_hook(request: Request, team_slug: str | None = None, db: Session = Depends(get_db)):
     """OpenPrintHQ's signed webhook provider (X-OPHQ-Signature: sha256=HMAC of the body). Job events pull the farm
     queue shortly after (the queue is the source of truth); printer alarms, going offline and failure detection
-    alert like Watchtower's do."""
+    raise farm alerts."""
     raw = await request.body()
     _hook_team(db, team_slug)
     secret = (setting(db, "ophq_webhook_secret") or "").encode()

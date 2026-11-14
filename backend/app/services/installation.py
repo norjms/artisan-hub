@@ -1,15 +1,12 @@
-"""The installation: its one print farm, chosen explicitly, and first-run setup.
+"""The installation: its print farm and first-run setup.
 
-Invariant 1: exactly one print farm per installation, chosen explicitly and never inferred from which
-connections happen to exist. That inference is what allowed the November 2026 double-tracking bug.
+The print farm is ArtisanHub Farm (OpenPrintHQ), the only farm the hub supports. First-run setup records it once
+the farm is connected. Invariants 3 and 4: the hub is complete without the installer, and the setup API lives in the
+hub. First-run setup goes through /api/setup/v1, used both by the hub's own /setup page and by the installer from
+outside.
 
-Invariants 3 and 4: the hub is complete without the installer, and the setup API lives in the hub. First-run
-setup goes through /api/setup/v1, used both by the hub's own /setup page and by the installer from outside.
-
-Installations that predate the explicit choice are migrated at startup: if every team with a farm connected
-agrees on the same farm, that farm is written as the explicit choice ("migrated"). If they do not agree, or no
-farm is connected, nothing is guessed: the installation keeps the old per-team inference ("legacy") and the
-hub logs a warning, so nothing changes for it until an admin chooses.
+An installation set up with a farm the hub no longer supports refuses to start (UnsupportedFarm), so it keeps
+running its previous version until it has moved to ArtisanHub Farm. Nothing about it is changed or guessed.
 """
 
 import hashlib
@@ -28,10 +25,21 @@ from ..tenant import unscoped
 from .connections import NotConnected
 
 log = logging.getLogger("hub.installation")
-FARM_KINDS = ("watchtower", "openprinthq")
+FARM_KINDS = ("openprinthq",)
 TTL = 20.0   # web and worker are separate processes; a short cache, as for connections
 _cache: dict = {}
 _lock = threading.Lock()
+
+
+class UnsupportedFarm(RuntimeError):
+    """The installation was set up with a farm this version no longer supports."""
+
+    def __init__(self, farm: str):
+        super().__init__(
+            f"This installation's print farm is {farm!r}, which this version of ArtisanHub no longer supports. "
+            "Nothing was changed. Keep running the previous version until the installation has moved to "
+            "ArtisanHub Farm (docs/farm.md, Moving from another farm), then upgrade.")
+        self.farm = farm
 
 
 class FarmNotChosen(NotConnected):
@@ -81,47 +89,32 @@ def chosen_farm() -> str | None:
     return state()["farm"]
 
 
-def _inferred(rows: list) -> str | None:
-    """The old per-team rule, for one team's connection rows: OpenPrintHQ when it is the only farm connected, or is
-    marked use_as_farm; Watchtower when it is connected; otherwise none."""
-    have = {r.kind: r for r in rows if r.kind in FARM_KINDS and r.enabled and (r.config or {}).get("url")}
-    if "openprinthq" in have and ("watchtower" not in have or (have["openprinthq"].config or {}).get("use_as_farm")):
-        return "openprinthq"
-    return "watchtower" if "watchtower" in have else None
-
-
-def decide(kinds: set[str], fresh: bool) -> tuple[str | None, str | None]:
-    """(farm, farm_source) for an installation seen for the first time, from the farms its teams' connections imply.
-    One farm everywhere: that farm, migrated. Anything else on an existing installation: legacy, nothing guessed.
-    A new installation with no farm connected: nothing, until first-run setup chooses."""
-    if len(kinds) == 1:
-        return next(iter(kinds)), "migrated"
-    if not fresh:
-        return None, "legacy"
-    return None, None
+def decide(connected: bool, fresh: bool) -> tuple[str | None, str | None]:
+    """(farm, farm_source) for an installation seen for the first time: OpenPrintHQ when it is already connected
+    (an installation older than the explicit choice), otherwise nothing until first-run setup."""
+    if connected:
+        return "openprinthq", "migrated"
+    return None, (None if fresh else "legacy")
 
 
 def bootstrap(db: Session, fresh: bool) -> None:
     """At startup: make sure the installation row exists, migrate an older installation once, and on a new
-    installation that has no setup token from the environment, generate one and log it once."""
+    installation that has no setup token from the environment, generate one and log it once. An installation whose
+    farm is no longer supported stops here (UnsupportedFarm)."""
     from ..models import Connection, Installation, User
     row = db.get(Installation, 1)
+    if row is not None and row.farm and row.farm not in FARM_KINDS:
+        raise UnsupportedFarm(row.farm)
     if row is None:
         row = Installation(id=1)
         db.add(row)
         db.flush()
-        by_team: dict[int, list] = {}
         with unscoped():   # every team's connections, across teams
-            for c in db.execute(select(Connection).where(Connection.kind.in_(FARM_KINDS))).scalars():
-                by_team.setdefault(c.team_id, []).append(c)
-        kinds = {k for k in (_inferred(rows) for rows in by_team.values()) if k}
-        row.farm, row.farm_source = decide(kinds, fresh)
+            connected = any((c.config or {}).get("url") and c.enabled for c in
+                            db.execute(select(Connection).where(Connection.kind == "openprinthq")).scalars())
+        row.farm, row.farm_source = decide(connected, fresh)
         if row.farm_source == "migrated":
-            log.info("Installation farm set to %s from its existing connections", row.farm)
-        elif row.farm_source == "legacy":
-            log.warning("Installation farm not chosen: %s. The hub keeps choosing per team, as before, until an "
-                        "admin chooses one farm for the installation.",
-                        "teams use different farms" if kinds else "no farm is connected")
+            log.info("Installation farm set to openprinthq from its existing connection")
         if not fresh and db.execute(select(func.count()).select_from(User)).scalar():
             row.setup_completed_at = _now()   # an installation already in use never runs first-run setup
     if row.setup_completed_at is None and not settings().setup_token and not row.setup_token_hash:
@@ -133,6 +126,17 @@ def bootstrap(db: Session, fresh: bool) -> None:
     forget()
 
 
+def record_farm(db: Session) -> None:
+    """An installation that has no farm yet (one older than the explicit choice) gets ArtisanHub Farm once it is
+    connected."""
+    from ..models import Installation
+    row = db.get(Installation, 1)
+    if row is not None and not row.farm:
+        row.farm, row.farm_source = "openprinthq", "connected"
+        db.flush()
+        forget()
+
+
 def token_ok(row, token: str) -> bool:
     expected = settings().setup_token
     if expected:
@@ -141,13 +145,9 @@ def token_ok(row, token: str) -> bool:
 
 
 def connect_allowed(kind: str, existing: bool) -> None:
-    """Refuse a new connection to a farm other than the installation's own (invariant 1). An existing connection
-    row can still be edited, so an installation that predates the choice keeps working as it did."""
+    """Connecting the farm needs first-run setup to have run (it records the farm)."""
     if kind not in FARM_KINDS or existing:
         return
     st = state()
-    if st["farm"] and kind != st["farm"]:
-        raise ValueError(f"This installation's print farm is {st['farm']}. Connecting {kind} as well is refused: "
-                         "one installation runs exactly one farm.")
     if not st["farm"] and st["farm_source"] != "legacy":
-        raise ValueError("Choose this installation's print farm first (first-run setup at /setup).")
+        raise ValueError("Finish first-run setup at /setup first: it connects the print farm.")

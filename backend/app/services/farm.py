@@ -1,19 +1,19 @@
-"""Farm edge: a mirror of Watchtower's job queue and plate checks after every print.
+"""Farm edge: a mirror of the farm's job queue, and plate checks after every print.
 
-Watchtower only sends a job to a printer marked Ready, and a printer stops being Ready when a print ends, until
-someone clears the plate. The plate check is where that happens in the hub: the person records what came off the
-plate (passed, or failed and why, with an optional reprint) and the hub sets the printer Ready through
-Watchtower's public API. Nothing is blocked if someone sets Ready in Watchtower instead; the check is then skipped.
+The farm only sends a job to a printer whose plate is clear, and a printer's plate stops being clear when a print
+ends, until someone clears it. The plate check is where that happens in the hub: the person records what came off
+the plate (passed, or failed and why, with an optional reprint) and the hub tells the farm the plate is clear.
+Nothing is blocked if someone clears the plate in the farm instead; the check is then skipped.
 
-The queue mirror is fed by Watchtower's webhooks (every queue event) and a periodic sync of its queue, so the hub
-can list, search and explain waiting jobs without asking Watchtower each time.
+The queue mirror is fed by the farm's webhooks (every queue event) and a periodic sync of its queue, so the hub can
+list, search and explain waiting jobs without asking the farm each time.
 
-Staggered start: the hub sets printers Ready one at a time, at least `stagger_minutes` apart (counting prints
+Staggered start: the hub clears plates one printer at a time, at least `stagger_minutes` apart (counting prints
 that started on their own too), so several printers never heat up together after a batch of plate checks.
 
-Orders: with `order_routing` = "hub", a paid WooCommerce order is sent to Watchtower by the hub (by SKU when the
-product has a Watchtower SKU mapping, else the product's approved print file), cancelled orders pull their jobs
-that haven't started, and a private note goes on the Woo order once every job has printed.
+Orders: with `order_routing` = "hub", a paid WooCommerce order is sent to the farm by the hub (the product's
+approved print files), cancelled orders pull their jobs that haven't started, and a private note goes on the Woo
+order once every job has printed.
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -52,7 +52,7 @@ def now():
 
 
 def ts(v) -> datetime | None:
-    """Watchtower timestamps: public API in UTC with a Z, the private API without a zone (the host runs in UTC)."""
+    """Farm timestamps: UTC, with or without a zone."""
     if not v:
         return None
     try:
@@ -83,7 +83,7 @@ def fields_private(j: dict) -> dict:
     if st == "waiting_filament":
         reason = md.get("filament_rejection") or "Waiting for a printer with the right filament"
     elif st == "held":
-        reason = "Held in Watchtower"
+        reason = "Held in the farm"
     return {"name": j.get("name"), "status": st, "printer_name": j.get("printer_id") or md.get("soft_assign_printer"),
             "priority": j.get("priority"), "quantity": md.get("quantity_required"),
             "source": j.get("source") or md.get("source"), "file_ref": fr,
@@ -152,8 +152,8 @@ def transition(db: Session, fj: FarmJob, prev: str | None, live: bool):
         for c in db.execute(select(PlateCheck).where(PlateCheck.printer_name == fj.printer_name,
                                                      PlateCheck.state == "waiting")).scalars():
             if c.external_job_id != fj.external_id and _aware(c.created_at) <= since:
-                c.state, c.note = "skipped", "The printer was set Ready in Watchtower and started another print"
-                c.checked_at, c.checked_by = now(), "watchtower"
+                c.state, c.note = "skipped", "The plate was cleared in the farm and another print started"
+                c.checked_at, c.checked_by = now(), "farm"
     if fj.status == "printing":
         set_setting(db, "farm_last_start", now().isoformat())
         if live or prev is not None:     # which spools it is using, while they are still loaded
@@ -188,8 +188,8 @@ def open_check(db: Session, fj: FarmJob) -> PlateCheck | None:
         return None
     for c in db.execute(select(PlateCheck).where(PlateCheck.printer_name == fj.printer_name,
                                                  PlateCheck.state == "waiting")).scalars():
-        c.state, c.note = "skipped", "A later print ended on this printer, so it was set Ready in Watchtower"
-        c.checked_at, c.checked_by = now(), "watchtower"
+        c.state, c.note = "skipped", "A later print ended on this printer, so its plate was cleared in the farm"
+        c.checked_at, c.checked_by = now(), "farm"
     c = PlateCheck(printer_name=fj.printer_name, farm_job_id=fj.id, external_job_id=fj.external_id,
                    job_name=fj.name, model_id=fj.model_id, job_outcome=fj.status)
     db.add(c)
@@ -198,7 +198,7 @@ def open_check(db: Session, fj: FarmJob) -> PlateCheck | None:
 
 
 def ingest_event(db: Session, name: str, data: dict) -> dict:
-    """One Watchtower webhook."""
+    """One farm webhook."""
     jid = data.get("job_id")
     st = EVENT_STATUS.get(name)
     if jid is not None and st:
@@ -285,7 +285,7 @@ def check_opened(db: Session, cid: int) -> dict:
 
 
 def sync(db: Session) -> dict:
-    """Pull Watchtower's queue: every active job, plus the most recent finished ones."""
+    """Pull the farm's queue: every active job, plus the most recent finished ones."""
     w = _client()
     seen, new, changed = set(), 0, 0
     act = w.queue(statuses=list(ACTIVE), limit=500) or {}
@@ -395,7 +395,7 @@ def fail_check(db: Session, c: PlateCheck, actor: str, reason: str, note: str | 
     label = FAIL_REASONS[reason]
     c.state, c.reason, c.note, c.checked_by, c.checked_at = "failed", reason, (note or None), actor, now()
     text = f"Plate check: {label}" + (f": {note}" if note else "")
-    rec = db.execute(select(PrintRecord).where(PrintRecord.source == "watchtower",
+    rec = db.execute(select(PrintRecord).where(PrintRecord.source == "farm",
                                                PrintRecord.external_id == str(c.external_job_id))).scalar()
     if rec:
         rec.outcome = "failed"
@@ -409,12 +409,12 @@ def fail_check(db: Session, c: PlateCheck, actor: str, reason: str, note: str | 
     elif c.model_id:
         from . import slicing
         r, mid, fid = slicing.match_farm_job(db, c.job_name, c.printer_name)
-        slicing.record_print(db, r, mid or c.model_id, "failed", source="watchtower", external_id=str(c.external_job_id),
+        slicing.record_print(db, r, mid or c.model_id, "failed", source="farm", external_id=str(c.external_job_id),
                              printer_name=c.printer_name, note=text, actor=actor, file_id=fid)
     if reprint:
         fj = db.get(FarmJob, c.farm_job_id) if c.farm_job_id else None
         if not fj or not fj.file_ref:
-            c.ready_error = "Reprint not sent: Watchtower's file for this job isn't known"
+            c.ready_error = "Reprint not sent: the farm's file for this job isn't known"
         else:
             try:
                 out = _client().submit_job(file_ref=fj.file_ref, quantity=1, job_name=fj.name, priority=fj.priority)
@@ -466,7 +466,7 @@ def print_now(db: Session, model, prof, actor: str, quantity: int = 1, start: bo
     c = _client()
     if not c.has("pin_printer"):
         raise ValueError("this farm can't send a job to one printer")
-    printer = prof.wt_printer or prof.name
+    printer = prof.farm_printer or prof.name
     files = [db.get(ModelFile, i) for i in ids]
     if any(f is None for f in files):
         raise ValueError("an approved file is missing from the hub's library: slice it again")
@@ -592,7 +592,7 @@ def overview(db: Session, live_printers: bool = True) -> dict:
             "synced_at": _iso(synced)}
 
 
-# ---------- WooCommerce orders straight to Watchtower ----------
+# ---------- WooCommerce orders to the farm ----------
 
 NOT_STARTED = ("queued", "waiting_filament", "assigned", "held")
 
@@ -605,8 +605,12 @@ def max_retries(db: Session) -> int:
         return 1
 
 
+ROUTING = ("hub", "off")   # hub: paid orders are sent to the farm; off: orders are queued by hand
+
+
 def routing(db: Session) -> str:
-    return setting(db, "order_routing", "shim") or "shim"
+    r = setting(db, "order_routing", "off") or "off"
+    return r if r in ROUTING else "off"
 
 
 def on_order(db: Session, order: Order, prev_status: str | None):
@@ -615,7 +619,7 @@ def on_order(db: Session, order: Order, prev_status: str | None):
         return
     if order.is_test and not setting(db, "route_test_orders", False):
         return
-    if order.status == "processing" and any(not ln.wt_job_ids for ln in order.lines):
+    if order.status == "processing" and any(not ln.farm_job_ids for ln in order.lines):
         enqueue(db, "farm.route_order", ref=f"route:{order.id}", payload={"order_id": order.id}, delay=2)
     elif order.status in ("cancelled", "refunded", "failed") and prev_status != order.status and order.routed_at:
         enqueue(db, "farm.cancel_order", ref=f"route:{order.id}", payload={"order_id": order.id}, delay=2)
@@ -638,44 +642,41 @@ def route_order(db: Session, order_id: int, force: bool = False) -> dict:
     from ..models import Quote
     quoted = {x.order_line_id for x in db.execute(select(Quote).where(Quote.order_id == o.id)).scalars()}
     for ln in o.lines:
-        if ln.wt_job_ids or ln.id in quoted:
+        if ln.farm_job_ids or ln.id in quoted:
             continue              # custom prints go to the farm when their quote is approved
         p = db.get(Product, ln.product_id) if ln.product_id else None
         if not p:
-            ln.wt_error = f"no product in the hub has SKU {ln.sku}"
-            problems.append(f"{ln.name}: {ln.wt_error}")
+            ln.farm_error = f"no product in the hub has SKU {ln.sku}"
+            problems.append(f"{ln.name}: {ln.farm_error}")
             continue
         name = f"#{o.number} {ln.sku or p.sku}"
         try:
-            if ln.sku and ln.sku in (p.wt_mapping_ids or {}):
-                ids = _job_ids(w.submit_job(sku=ln.sku, quantity=ln.qty, job_name=name))
-            else:
-                from .shop import ensure_farm_file
-                files = print_files(p)
-                if not files:
-                    raise ValueError("it has no print-ready file (sliced .3mf or .gcode) marked for production")
-                ids = []
-                retry = {"max_retries": max_retries(db)} if getattr(w, "has", lambda c: False)("retries") and max_retries(db) else {}
-                for f in files:
-                    # uploads it first when the farm's library doesn't have it (new file, or a ref from another farm)
-                    ref = ensure_farm_file(f, w, f"{p.sku}__{f.filename}")
-                    ids += _job_ids(w.submit_job(file_ref=ref, quantity=ln.qty,
-                                                 job_name=f"{name} {f.filename}", **retry))
-                if ln.variant_id:
-                    from ..models import Variant
-                    v = db.get(Variant, ln.variant_id)
-                    if v:
-                        event(db, f"order:{o.id}", f"Order #{o.number}: {p.title} in {v.color_name} was sent with the "
-                              "file's own colours; check the filament Watchtower picks", level="warn")
+            from .shop import ensure_farm_file
+            files = print_files(p)
+            if not files:
+                raise ValueError("it has no print-ready file (sliced .3mf or .gcode) marked for production")
+            ids = []
+            retry = {"max_retries": max_retries(db)} if getattr(w, "has", lambda c: False)("retries") and max_retries(db) else {}
+            for f in files:
+                # uploads it first when the farm's library doesn't have it yet
+                ref = ensure_farm_file(f, w, f"{p.sku}__{f.filename}")
+                ids += _job_ids(w.submit_job(file_ref=ref, quantity=ln.qty,
+                                             job_name=f"{name} {f.filename}", **retry))
+            if ln.variant_id:
+                from ..models import Variant
+                v = db.get(Variant, ln.variant_id)
+                if v:
+                    event(db, f"order:{o.id}", f"Order #{o.number}: {p.title} in {v.color_name} was sent with the "
+                          "file's own colours; check the filament the farm picks", level="warn")
         except Exception as e:  # noqa: BLE001
-            ln.wt_error = (getattr(e, "message", None) or str(e))[:500]
-            problems.append(f"{ln.name}: {ln.wt_error}")
+            ln.farm_error = (getattr(e, "message", None) or str(e))[:500]
+            problems.append(f"{ln.name}: {ln.farm_error}")
             continue
-        ln.wt_job_ids, ln.wt_error = ids, None
+        ln.farm_job_ids, ln.farm_error = ids, None
         for i in ids:
             fj, _ = upsert(db, i, {"name": name, "status": "queued", "order_refs": [str(o.number)], "model_id": p.model_id})
         sent += len(ids)
-    if all(ln.wt_job_ids or ln.id in quoted for ln in o.lines) and any(ln.wt_job_ids for ln in o.lines):
+    if all(ln.farm_job_ids or ln.id in quoted for ln in o.lines) and any(ln.farm_job_ids for ln in o.lines):
         o.routed_at = now()
         if not o.due_at:
             from .schedule import default_due
@@ -696,7 +697,7 @@ def cancel_order(db: Session, order_id: int) -> dict:
     w = _client()
     cancelled, printing = [], []
     for ln in o.lines:
-        for i in ln.wt_job_ids or []:
+        for i in ln.farm_job_ids or []:
             fj = db.execute(select(FarmJob).where(FarmJob.external_id == str(i))).scalar()
             st = fj.status if fj else "queued"
             if st in NOT_STARTED:
@@ -719,7 +720,7 @@ def cancel_order(db: Session, order_id: int) -> dict:
 def relink_reprint(db: Session, fj: FarmJob, new_id):
     """A reprint replaces the failed job on its order line."""
     for ln in _lines_with(db, fj.external_id):
-        ln.wt_job_ids = [new_id if str(x) == fj.external_id else x for x in ln.wt_job_ids]
+        ln.farm_job_ids = [new_id if str(x) == fj.external_id else x for x in ln.farm_job_ids]
         upsert(db, new_id, {"name": fj.name, "status": "queued", "order_refs": fj.order_refs, "model_id": fj.model_id})
 
 
@@ -727,7 +728,7 @@ def _lines_with(db: Session, ext_id: str) -> list[OrderLine]:
     out = []
     for o in db.execute(select(Order).where(Order.routed_at.is_not(None), Order.printed_at.is_(None))).scalars():
         for ln in o.lines:
-            if any(str(x) == str(ext_id) for x in ln.wt_job_ids or []):
+            if any(str(x) == str(ext_id) for x in ln.farm_job_ids or []):
                 out.append(ln)
     return out
 
@@ -736,7 +737,7 @@ def order_progress(db: Session, fj: FarmJob):
     """When a job ends: if it was the last one of its order, note it on the Woo order."""
     for ln in _lines_with(db, fj.external_id):
         o = ln.order
-        ids = [str(x) for line in o.lines for x in (line.wt_job_ids or [])]
+        ids = [str(x) for line in o.lines for x in (line.farm_job_ids or [])]
         rows = {r.external_id: r.status for r in db.execute(select(FarmJob).where(FarmJob.external_id.in_(ids))).scalars()}
         if ids and all(rows.get(i) == "completed" for i in ids) and not o.printed_at:
             o.printed_at = now()
@@ -756,9 +757,9 @@ def order_printed(db: Session, order_id: int) -> dict:
 
 
 def order_print_state(db: Session, o: Order) -> dict:
-    ids = [str(x) for ln in o.lines for x in (ln.wt_job_ids or [])]
+    ids = [str(x) for ln in o.lines for x in (ln.farm_job_ids or [])]
     rows = {r.external_id: r.status for r in db.execute(select(FarmJob).where(FarmJob.external_id.in_(ids))).scalars()} if ids else {}
-    errs = [ln.wt_error for ln in o.lines if ln.wt_error]
+    errs = [ln.farm_error for ln in o.lines if ln.farm_error]
     counts = {}
     for i in ids:
         counts[rows.get(i, "queued")] = counts.get(rows.get(i, "queued"), 0) + 1

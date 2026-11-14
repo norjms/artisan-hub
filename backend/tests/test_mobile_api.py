@@ -184,11 +184,11 @@ def test_relay(spoolman_mock):
         assert db.query(Event).filter(Event.ref == "relay", Event.message.like("spoolman PATCH%")).count() >= 1
 
 
-def test_overview_survives_watchtower_down(monkeypatch):
+def test_overview_survives_the_farm_down(monkeypatch):
     import app.routers.mobile as mob
 
     def boom():
-        raise RuntimeError("Watchtower is not connected")
-    monkeypatch.setattr(mob, "_wt", boom)
+        raise RuntimeError("The farm is not connected")
+    monkeypatch.setattr(mob, "_farm", boom)
     d = _client().get("/api/mobile/v1/overview").json()
     assert d["printers"] is None and "printers" in d["errors"] and "plate_checks_waiting" in d
